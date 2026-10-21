@@ -71,6 +71,7 @@ signals:
     void linesAdded(const QList<Segment>& lines);
     void translated(const QList<int>& ids, const QStringList& zh);
     void coverageChanged(const QList<TimeRange>& ranges); // 已识别的区间
+    void durationKnown(double seconds); // 读到媒体时长（播放器打不开的格式也能显示进度）
     void segmentsUpdated(const QList<Segment>& segments); // 最终结果（按时间排序，含校对修改）
     void finished(const PipelineResult& result);
     void failed(const TaskError& error);

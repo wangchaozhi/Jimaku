@@ -70,6 +70,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_pipeline, &Pipeline::linesAdded, m_workspace, &WorkspacePage::addLines);
     connect(m_pipeline, &Pipeline::translated, m_workspace, &WorkspacePage::addTranslations);
     connect(m_pipeline, &Pipeline::coverageChanged, m_workspace, &WorkspacePage::setCoverage);
+    connect(m_pipeline, &Pipeline::durationKnown, m_workspace, &WorkspacePage::setDuration);
     connect(m_workspace, &WorkspacePage::priorityRequested, m_pipeline, &Pipeline::prioritize);
     connect(m_pipeline, &Pipeline::segmentsUpdated, m_workspace, &WorkspacePage::updateSegments);
     connect(m_pipeline, &Pipeline::finished, this, [this](const PipelineResult& r) {

@@ -1,6 +1,7 @@
 #include "workspacepage.h"
 
 #include "core/burner.h"
+#include "core/mediadecoder.h"
 #include "core/settings.h"
 #include "core/subtitlewriter.h"
 #include "subtitlemodel.h"
@@ -8,17 +9,21 @@
 #include "videoview.h"
 
 #include <QAudioOutput>
+#include <QCryptographicHash>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGraphicsVideoItem>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMediaFormat>
 #include <QMediaPlayer>
 #include <QMessageBox>
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QSplitter>
+#include <QStandardPaths>
 #include <QStyle>
 #include <QTableView>
 #include <QTemporaryDir>
@@ -132,7 +137,8 @@ WorkspacePage::WorkspacePage(QWidget* parent)
             showFrameAt(0);
     });
     connect(m_player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString&) {
-        m_view->setSubtitle(QString(), QString(), tr("这个格式无法预览，字幕仍会照常生成"));
+        m_previewHint = tr("这个视频无法预览，字幕仍会照常生成");
+        refreshOverlay();
     });
     auto* controls = new QHBoxLayout;
     controls->addWidget(m_play);
@@ -226,7 +232,7 @@ void WorkspacePage::begin(const QString& videoPath, const QString& model, const 
     m_coverage = resume.covered;
     m_timeline->setProcessed(m_coverage);
     m_view->setSubtitle(QString(), QString());
-    m_player->setSource(QUrl::fromLocalFile(videoPath));
+    loadPreview(videoPath);
     setProcessing(true);
     updateBanner();
 }
@@ -238,6 +244,79 @@ void WorkspacePage::openResult(const Project& project)
     m_summary = tr("上次处理的结果");
     setProcessing(false);
     updateBanner();
+}
+
+void WorkspacePage::setDuration(double seconds)
+{
+    if (m_duration > 0 || seconds <= 0)
+        return;
+    m_duration = seconds;
+    m_timeline->setDuration(qint64(seconds * 1000));
+    refreshStatus();
+}
+
+void WorkspacePage::loadPreview(const QString& video)
+{
+    if (m_remuxer) {
+        m_remuxer->cancel();
+        m_remuxer->deleteLater();
+        m_remuxer = nullptr;
+    }
+    m_previewHint.clear();
+    m_player->stop();
+    m_player->setSource(QUrl());
+
+    // 当前播放后端能直接解码的容器就直接播（官方 Qt 的 FFmpeg 后端支持 MKV；Homebrew 的 Qt 只有系统 AVFoundation）
+    static const QHash<QString, QMediaFormat::FileFormat> formats = {
+        {QStringLiteral("mp4"), QMediaFormat::MPEG4}, {QStringLiteral("m4v"), QMediaFormat::MPEG4},
+        {QStringLiteral("mov"), QMediaFormat::QuickTime}, {QStringLiteral("mkv"), QMediaFormat::Matroska},
+        {QStringLiteral("webm"), QMediaFormat::WebM}, {QStringLiteral("avi"), QMediaFormat::AVI},
+        {QStringLiteral("wmv"), QMediaFormat::WMV}, {QStringLiteral("ogg"), QMediaFormat::Ogg},
+        {QStringLiteral("ogv"), QMediaFormat::Ogg}, {QStringLiteral("mp3"), QMediaFormat::MP3},
+        {QStringLiteral("m4a"), QMediaFormat::Mpeg4Audio}, {QStringLiteral("wav"), QMediaFormat::Wave},
+        {QStringLiteral("flac"), QMediaFormat::FLAC}};
+    const QString ext = QFileInfo(video).suffix().toLower();
+    const auto it = formats.constFind(ext);
+    if (it != formats.cend() && QMediaFormat(*it).isSupported(QMediaFormat::Decode)) {
+        m_player->setSource(QUrl::fromLocalFile(video));
+        return;
+    }
+
+    // 其他容器：不重新编码转成 MP4 放在缓存里（只保留当前这一个），同一个视频下次直接用
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/preview");
+    QDir().mkpath(dir);
+    const QString name = QString::fromLatin1(QCryptographicHash::hash(QFileInfo(video).absoluteFilePath().toUtf8(),
+                                                                      QCryptographicHash::Sha1).toHex()) + QStringLiteral(".mp4");
+    const QString out = dir + QLatin1Char('/') + name;
+    for (const QFileInfo& old : QDir(dir).entryInfoList(QDir::Files)) {
+        if (old.fileName() != name)
+            QFile::remove(old.absoluteFilePath());
+    }
+    if (QFileInfo(out).size() > 0 && QFileInfo(out).lastModified() >= QFileInfo(video).lastModified()) {
+        m_player->setSource(QUrl::fromLocalFile(out));
+        return;
+    }
+    m_previewHint = tr("正在准备预览（%1 转为 MP4，不重新编码）…").arg(ext.toUpper());
+    refreshOverlay();
+    m_remuxer = new Burner(this);
+    connect(m_remuxer, &Burner::progress, this, [this, ext](double f) {
+        m_previewHint = tr("正在准备预览（%1 转为 MP4，不重新编码）… %2%").arg(ext.toUpper()).arg(int(f * 100));
+        refreshOverlay();
+    });
+    connect(m_remuxer, &Burner::finished, this, [this, out](bool ok, const QString&) {
+        m_remuxer->deleteLater();
+        m_remuxer = nullptr;
+        if (!ok) {
+            QFile::remove(out);
+            m_previewHint = tr("这个视频无法预览，字幕仍会照常生成");
+            refreshOverlay();
+            return;
+        }
+        m_previewHint.clear();
+        m_player->setSource(QUrl::fromLocalFile(out));
+    });
+    QString error;
+    m_remuxer->startRemux(video, out, qMax(m_duration, MediaDecoder::probeDuration(video, &error)));
 }
 
 bool WorkspacePage::covered(double seconds) const
@@ -420,6 +499,11 @@ void WorkspacePage::setRetranslating(bool on)
 
 void WorkspacePage::stopPlayback()
 {
+    if (m_remuxer) {
+        m_remuxer->cancel();
+        m_remuxer->deleteLater();
+        m_remuxer = nullptr;
+    }
     m_player->stop();
 }
 
@@ -466,7 +550,9 @@ void WorkspacePage::refreshOverlay()
         if (row >= 0 && m_player->playbackState() == QMediaPlayer::PlayingState)
             m_table->scrollTo(m_model->index(row, 0), QAbstractItemView::EnsureVisible);
     }
-    if (row >= 0) {
+    if (!m_previewHint.isEmpty()) { // 还没有画面（正在转换或无法预览）：提示一直显示
+        m_view->setSubtitle(QString(), QString(), m_previewHint);
+    } else if (row >= 0) {
         const Segment& s = m_model->segments().at(row);
         if (!s.zh.trimmed().isEmpty())
             m_view->setSubtitle(s.zh, s.ja);

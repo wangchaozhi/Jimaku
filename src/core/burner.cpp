@@ -115,6 +115,13 @@ void Burner::startSoft(const QString& video, const QString& srtFile, const QStri
         duration);
 }
 
+void Burner::startRemux(const QString& video, const QString& output, double duration)
+{
+    run({QStringLiteral("-i"), video, QStringLiteral("-map"), QStringLiteral("0:v:0"), QStringLiteral("-map"), QStringLiteral("0:a:0?"),
+         QStringLiteral("-c"), QStringLiteral("copy"), QStringLiteral("-sn"), output},
+        duration);
+}
+
 void Burner::cancel()
 {
     if (m_process.state() != QProcess::NotRunning) {

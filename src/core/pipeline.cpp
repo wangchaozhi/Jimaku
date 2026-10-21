@@ -117,6 +117,7 @@ void Pipeline::runAll(const PipelineOptions& o)
         return;
     }
     result.decodeSeconds = timer.restart() / 1000.0;
+    emit durationKnown(result.mediaDuration);
 
     // 2. 加载模型（已加载则直接复用）
     enter(LoadingModel);

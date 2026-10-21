@@ -16,6 +16,8 @@ public:
     void start(const QString& video, const QString& assFile, const QString& output, double duration);
     // 软字幕：mp4 里加一条 mov_text 字幕轨
     void startSoft(const QString& video, const QString& srtFile, const QString& output, double duration);
+    // 不重新编码，把视频换成 MP4 容器（系统播放器不支持 MKV 等格式时用来预览）
+    void startRemux(const QString& video, const QString& output, double duration);
     void cancel();
 
     // 视频编码参数：macOS 有硬件编码器时用 VideoToolbox（码率同原视频），否则 x264 veryfast

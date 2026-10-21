@@ -31,6 +31,7 @@ public:
     void addLines(const QList<Segment>& lines);
     void addTranslations(const QList<int>& ids, const QStringList& zh);
     void setCoverage(const QList<TimeRange>& ranges);
+    void setDuration(double seconds);
     void updateSegments(const QList<Segment>& segments); // 校对后的整表
     void finish(const PipelineResult& result);
     void fail(const TaskError& error);
@@ -56,6 +57,7 @@ private:
     void exportSubtitles();
     void seekTo(qint64 ms); // 用户跳转：没识别到的地方请求优先处理
     void showFrameAt(qint64 ms); // 暂停状态下显示指定位置的画面
+    void loadPreview(const QString& video); // 系统播放器不支持的容器先转成 MP4 再预览
     void endPreview();
     bool covered(double seconds) const;
     void scheduleSave();
@@ -74,6 +76,8 @@ private:
     bool m_previewing = false;   // 暂停时跳转：正在静音播放等新画面
     qint64 m_previewTarget = 0;
     int m_previewSerial = 0;
+    QString m_previewHint;         // 画面上常驻的提示（正在准备预览、无法预览）
+    class Burner* m_remuxer = nullptr;
     int m_translated = 0;      // 已拿到译文结果的行数（含失败）
     QString m_stage;
     TaskError m_failure;       // 识别阶段的失败
