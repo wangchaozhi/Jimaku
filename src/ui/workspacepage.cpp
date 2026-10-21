@@ -1,6 +1,7 @@
 #include "workspacepage.h"
 
 #include "core/burner.h"
+#include "core/segmentedit.h"
 #include "core/mediadecoder.h"
 #include "core/settings.h"
 #include "core/subtitlewriter.h"
@@ -27,6 +28,7 @@
 #include <QStyle>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QUndoStack>
 #include <QVideoFrame>
 #include <QVideoSink>
 #include <QVBoxLayout>
@@ -177,9 +179,41 @@ WorkspacePage::WorkspacePage(QWidget* parent)
     m_saveTimer.setInterval(2000);
     connect(&m_saveTimer, &QTimer::timeout, this, &WorkspacePage::saveProject);
 
+    // 编辑工具条：处理完成后可用，操作当前选中的行，全部可以撤销（⌘Z）
+    m_undo = new QUndoStack(this);
+    m_model->setUndoStack(m_undo);
+    m_editBar = new QWidget(this);
+    auto* eb = new QHBoxLayout(m_editBar);
+    eb->setContentsMargins(0, 0, 0, 0);
+    auto tool = [&](const QString& text, const QString& tip, auto slot) {
+        auto* b = new QPushButton(text, m_editBar);
+        b->setToolTip(tip);
+        connect(b, &QPushButton::clicked, this, slot);
+        eb->addWidget(b);
+        return b;
+    };
+    m_setStart = tool(tr("设为起点"), tr("把选中行的开始时间设为当前播放位置"), [this] { setTimeHere(true); });
+    m_setEnd = tool(tr("设为终点"), tr("把选中行的结束时间设为当前播放位置"), [this] { setTimeHere(false); });
+    m_split = tool(tr("在此拆分"), tr("在当前播放位置把选中行拆成两行"), &WorkspacePage::splitHere);
+    m_merge = tool(tr("与下一行合并"), tr("把选中行和下一行合成一行"), &WorkspacePage::mergeWithNext);
+    m_delete = tool(tr("删除"), tr("删除选中的行"), &WorkspacePage::deleteSelected);
+    eb->addStretch();
+    connect(m_table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &WorkspacePage::updateEditButtons);
+    connect(m_model, &QAbstractItemModel::modelReset, this, [this] {
+        updateBanner();
+        refreshOverlay();
+        updateEditButtons();
+        scheduleSave();
+    });
+    auto* lower = new QWidget(this);
+    auto* ll = new QVBoxLayout(lower);
+    ll->setContentsMargins(0, 0, 0, 0);
+    ll->addWidget(m_editBar);
+    ll->addWidget(m_table, 1);
+
     auto* split = new QSplitter(Qt::Vertical, this);
     split->addWidget(player);
-    split->addWidget(m_table);
+    split->addWidget(lower);
     split->setStretchFactor(0, 3);
     split->setStretchFactor(1, 2);
     split->setChildrenCollapsible(false);
@@ -191,7 +225,7 @@ WorkspacePage::WorkspacePage(QWidget* parent)
     m_export = new QPushButton(tr("导出字幕…"), this);
     m_export->setDefault(true);
     connect(m_export, &QPushButton::clicked, this, &WorkspacePage::exportSubtitles);
-    auto* hint = new QLabel(tr("单击一行跳到那里播放，处理完成后双击修改"), this);
+    auto* hint = new QLabel(tr("单击一行跳到那里播放，处理完成后双击修改，⌘Z 撤销"), this);
     hint->setForegroundRole(QPalette::PlaceholderText);
     auto* bottom = new QHBoxLayout;
     bottom->addWidget(m_newVideo);
@@ -230,6 +264,7 @@ void WorkspacePage::begin(const QString& videoPath, const QString& model, const 
             ++m_translated;
     }
     m_model->setSegments(lines);
+    m_undo->clear();
     m_coverage = resume.covered;
     m_timeline->setProcessed(m_coverage);
     m_view->setSubtitle(QString(), QString());
@@ -408,6 +443,8 @@ void WorkspacePage::setProcessing(bool on)
     m_model->setEditable(!on);
     m_table->setEditTriggers(on ? QAbstractItemView::NoEditTriggers
                                 : QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
+    m_table->setSelectionMode(on ? QAbstractItemView::SingleSelection : QAbstractItemView::ExtendedSelection);
+    updateEditButtons();
     refreshStatus();
 }
 
@@ -464,6 +501,7 @@ void WorkspacePage::finish(const PipelineResult& r)
     m_lastTranslateError = r.lastTranslateError;
     // 行数不变时原地刷新，不重置表格（保留滚动位置和当前行）
     m_model->replaceSegments(r.segments);
+    m_undo->clear();
 
     QStringList parts;
     if (!r.review.terms.isEmpty())
@@ -502,6 +540,7 @@ void WorkspacePage::setRetranslated(const PipelineResult& r)
     m_translateError = r.translateError;
     m_lastTranslateError = r.lastTranslateError;
     m_model->setSegments(r.segments);
+    m_undo->clear();
     setRetranslating(false);
 }
 
@@ -514,6 +553,85 @@ void WorkspacePage::setRetranslating(bool on)
     m_table->setEditTriggers(on ? QAbstractItemView::NoEditTriggers
                                 : QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
     updateBanner();
+}
+
+int WorkspacePage::selectedRow() const
+{
+    const QModelIndexList rows = m_table->selectionModel() ? m_table->selectionModel()->selectedRows() : QModelIndexList();
+    if (rows.size() == 1)
+        return rows.first().row();
+    const QModelIndex current = m_table->currentIndex();
+    return rows.isEmpty() && current.isValid() ? current.row() : (rows.isEmpty() ? -1 : rows.first().row());
+}
+
+void WorkspacePage::updateEditButtons()
+{
+    const bool editable = !m_processing && m_model->rowCount() > 0;
+    const int row = selectedRow();
+    const int count = m_table->selectionModel() ? int(m_table->selectionModel()->selectedRows().size()) : 0;
+    m_setStart->setEnabled(editable && row >= 0 && count <= 1);
+    m_setEnd->setEnabled(editable && row >= 0 && count <= 1);
+    m_split->setEnabled(editable && row >= 0 && count <= 1);
+    m_merge->setEnabled(editable && row >= 0 && count <= 1 && row + 1 < m_model->rowCount());
+    m_delete->setEnabled(editable && (row >= 0 || count > 0));
+}
+
+void WorkspacePage::setTimeHere(bool start)
+{
+    const int row = selectedRow();
+    if (row < 0)
+        return;
+    QList<Segment> after = m_model->segments();
+    const double t = m_player->position() / 1000.0;
+    if (start)
+        SegmentEdit::setStart(&after[row], t);
+    else
+        SegmentEdit::setEnd(&after[row], t);
+    m_model->applyEdit(after, start ? tr("设为起点") : tr("设为终点"));
+}
+
+void WorkspacePage::splitHere()
+{
+    const int row = selectedRow();
+    if (row < 0)
+        return;
+    QList<Segment> after = m_model->segments();
+    Segment a, b;
+    if (!SegmentEdit::split(after[row], m_player->position() / 1000.0, &a, &b)) {
+        QMessageBox::information(this, tr("无法拆分"), tr("先把播放位置移到这一行的时间范围内（离两端至少 0.2 秒），再点“在此拆分”。"));
+        return;
+    }
+    b.id = m_model->nextId();
+    after[row] = a;
+    after.insert(row + 1, b);
+    m_model->applyEdit(after, tr("拆分"));
+}
+
+void WorkspacePage::mergeWithNext()
+{
+    const int row = selectedRow();
+    if (row < 0 || row + 1 >= m_model->rowCount())
+        return;
+    QList<Segment> after = m_model->segments();
+    after[row] = SegmentEdit::merge(after[row], after[row + 1]);
+    after.removeAt(row + 1);
+    m_model->applyEdit(after, tr("合并"));
+}
+
+void WorkspacePage::deleteSelected()
+{
+    QList<int> rows;
+    for (const QModelIndex& i : m_table->selectionModel()->selectedRows())
+        rows << i.row();
+    if (rows.isEmpty() && selectedRow() >= 0)
+        rows << selectedRow();
+    if (rows.isEmpty())
+        return;
+    std::sort(rows.begin(), rows.end(), std::greater<int>());
+    QList<Segment> after = m_model->segments();
+    for (int r : rows)
+        after.removeAt(r);
+    m_model->applyEdit(after, tr("删除 %1 行").arg(rows.size()));
 }
 
 void WorkspacePage::applySettings()

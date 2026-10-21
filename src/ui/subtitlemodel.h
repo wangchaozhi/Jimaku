@@ -5,6 +5,8 @@
 #include <QAbstractTableModel>
 #include <QHash>
 
+class QUndoStack;
+
 // 字幕编辑表：时间（只读）、日文、中文（可编辑）。没有译文的行标出底色
 class SubtitleModel : public QAbstractTableModel {
     Q_OBJECT
@@ -18,6 +20,10 @@ public:
     void insertLines(const QList<Segment>& lines);
     void setTranslations(const QList<int>& ids, const QStringList& zh); // 空字符串不覆盖
     void replaceSegments(const QList<Segment>& segments);       // 行数相同时原地刷新（保留滚动和选中）
+    // 用户编辑：记录到撤销栈（没有撤销栈时直接生效）。after 是编辑后的整表
+    void setUndoStack(QUndoStack* stack) { m_undo = stack; }
+    void applyEdit(QList<Segment> after, const QString& description);
+    int nextId() const; // 新增行（拆分）用的 id
     void setEditable(bool editable);
     void setCurrentRow(int row); // 正在播放的行加粗
     int currentRow() const { return m_current; }
@@ -39,5 +45,6 @@ private:
     QList<Segment> m_segments;
     QHash<int, int> m_rowOfId;
     bool m_editable = true;
+    QUndoStack* m_undo = nullptr;
     int m_current = -1;
 };

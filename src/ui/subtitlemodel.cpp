@@ -1,9 +1,12 @@
 #include "subtitlemodel.h"
 
+#include "core/segmentedit.h"
+
 #include <QColor>
 #include <QFont>
 #include <QGuiApplication>
 #include <QPalette>
+#include <QUndoStack>
 #include <algorithm>
 #include <cmath>
 
@@ -27,6 +30,45 @@ void SubtitleModel::setSegments(const QList<Segment>& segments)
     rebuildIndex();
     m_current = -1;
     endResetModel();
+}
+
+namespace {
+
+// 撤销记录：保存编辑前后的整表（几千行也只是几 MB，换来实现简单、不会出错）
+class SnapshotCommand : public QUndoCommand {
+public:
+    SnapshotCommand(SubtitleModel* model, QList<Segment> before, QList<Segment> after, const QString& text)
+        : QUndoCommand(text)
+        , m_model(model)
+        , m_before(std::move(before))
+        , m_after(std::move(after))
+    {
+    }
+    void redo() override { m_model->replaceSegments(m_after); }
+    void undo() override { m_model->replaceSegments(m_before); }
+
+private:
+    SubtitleModel* m_model;
+    QList<Segment> m_before, m_after;
+};
+
+} // namespace
+
+void SubtitleModel::applyEdit(QList<Segment> after, const QString& description)
+{
+    SegmentEdit::sortByStart(&after);
+    if (m_undo)
+        m_undo->push(new SnapshotCommand(this, m_segments, after, description));
+    else
+        replaceSegments(after);
+}
+
+int SubtitleModel::nextId() const
+{
+    int id = 0;
+    for (const Segment& s : m_segments)
+        id = qMax(id, s.id + 1);
+    return id;
 }
 
 void SubtitleModel::rebuildIndex()
@@ -164,14 +206,16 @@ bool SubtitleModel::setData(const QModelIndex& index, const QVariant& value, int
 {
     if (role != Qt::EditRole || !index.isValid())
         return false;
-    Segment& s = m_segments[index.row()];
-    if (index.column() == Japanese)
-        s.ja = value.toString();
-    else if (index.column() == Chinese)
-        s.zh = value.toString();
+    QList<Segment> after = m_segments;
+    Segment& s = after[index.row()];
+    const QString text = value.toString();
+    if (index.column() == Japanese && text != s.ja)
+        s.ja = text;
+    else if (index.column() == Chinese && text != s.zh)
+        s.zh = text;
     else
         return false;
-    emit dataChanged(index, index);
+    applyEdit(after, index.column() == Japanese ? tr("修改日文") : tr("修改中文"));
     return true;
 }
 

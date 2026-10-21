@@ -12,6 +12,7 @@ class QLabel;
 class QMediaPlayer;
 class QPushButton;
 class QTableView;
+class QUndoStack;
 class SubtitleModel;
 class Timeline;
 class VideoView;
@@ -44,6 +45,7 @@ public:
     void applySettings(); // 设置改了：字幕位置、字号
 
     QList<Segment> segments() const;
+    QUndoStack* undoStack() const { return m_undo; }
 
 signals:
     void cancelRequested();
@@ -58,6 +60,13 @@ private:
     void refreshStatus();
     void updateBanner();
     void exportSubtitles();
+    // 编辑：当前选中行、播放位置
+    int selectedRow() const;
+    void setTimeHere(bool start);
+    void splitHere();
+    void mergeWithNext();
+    void deleteSelected();
+    void updateEditButtons();
     void seekTo(qint64 ms); // 用户跳转：没识别到的地方请求优先处理
     void showFrameAt(qint64 ms); // 暂停状态下显示指定位置的画面
     void loadPreview(const QString& video); // 系统播放器不支持的容器先转成 MP4 再预览
@@ -102,6 +111,13 @@ private:
     QLabel* m_time;
     QTableView* m_table;
     SubtitleModel* m_model;
+    QUndoStack* m_undo;
+    QWidget* m_editBar;
+    QPushButton* m_setStart;
+    QPushButton* m_setEnd;
+    QPushButton* m_split;
+    QPushButton* m_merge;
+    QPushButton* m_delete;
     QPushButton* m_newVideo;
     QPushButton* m_burn;
     QPushButton* m_export;

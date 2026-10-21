@@ -59,6 +59,7 @@ add_library(jimaku_core STATIC
     src/core/translator.h src/core/translator.cpp
     src/core/subtitlewriter.h src/core/subtitlewriter.cpp
     src/core/subtitlereader.h src/core/subtitlereader.cpp
+    src/core/segmentedit.h src/core/segmentedit.cpp
     src/core/burner.h src/core/burner.cpp
     src/core/modelmanager.h src/core/modelmanager.cpp
     src/core/settings.h src/core/settings.cpp
@@ -117,7 +118,7 @@ endif()
 option(JIMAKU_BUILD_TESTS "Build unit tests" ON)
 if(JIMAKU_BUILD_TESTS)
     enable_testing()
-    foreach(name segmenter subtitlewriter subtitlereader translator errors transcriber coverage)
+    foreach(name segmenter segmentedit subtitlewriter subtitlereader translator errors transcriber coverage)
         qt_add_executable(${name}_test tests/${name}_test.cpp)
         target_link_libraries(${name}_test PRIVATE jimaku_core)
         add_test(NAME ${name} COMMAND ${name}_test)

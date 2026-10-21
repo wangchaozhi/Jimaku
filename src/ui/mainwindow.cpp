@@ -18,6 +18,7 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStandardPaths>
+#include <QUndoStack>
 
 namespace {
 
@@ -56,6 +57,14 @@ MainWindow::MainWindow(QWidget* parent)
     QAction* prefs = file->addAction(tr("设置…"), this, &MainWindow::openSettings);
     prefs->setShortcut(QKeySequence::Preferences);
     prefs->setMenuRole(QAction::PreferencesRole); // macOS 放到应用菜单里
+
+    auto* editMenu = menuBar()->addMenu(tr("编辑"));
+    QAction* undo = m_workspace->undoStack()->createUndoAction(this, tr("撤销"));
+    undo->setShortcut(QKeySequence::Undo);
+    QAction* redo = m_workspace->undoStack()->createRedoAction(this, tr("重做"));
+    redo->setShortcut(QKeySequence::Redo);
+    editMenu->addAction(undo);
+    editMenu->addAction(redo);
 
     connect(m_drop, &DropPage::chooseFileRequested, this, &MainWindow::chooseFile);
     connect(m_drop, &DropPage::settingsRequested, this, &MainWindow::openSettings);
