@@ -67,6 +67,9 @@ ctest --test-dir build
 
 - macOS（Homebrew 的 Qt）：加 `-DCMAKE_PREFIX_PATH=$(brew --prefix qt)`
 - Windows 上用 NVIDIA 显卡加速：加 `-DJIMAKU_CUDA=ON`（需要 CUDA Toolkit）
+- macOS 本地构建每次都询问钥匙串：钥匙串里的"始终允许"绑定在签名上，默认的临时签名每次编译都会变。
+  在"登录"钥匙串里建一个名为 `Jimaku Dev` 的自签名代码签名证书（会自动使用），
+  或者用已有的证书：`-DJIMAKU_CODESIGN_IDENTITY="证书名"`，之后只需授权一次
 
 ## 结构
 
