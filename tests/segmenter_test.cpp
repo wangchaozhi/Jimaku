@@ -63,8 +63,8 @@ int main()
     // 超过 6 秒时切开
     {
         QStringList words;
-        for (int i = 0; i < 8; ++i)
-            words << QStringLiteral("あ");
+        for (int i = 0; i < 4; ++i)
+            words << QStringLiteral("これは") << QStringLiteral("それが");
         const auto lines = resegment({rawSegment(words, 0.0, 1.0)}, o);
         bool ok = lines.size() >= 2;
         for (const Segment& s : lines)
@@ -74,7 +74,7 @@ int main()
 
     // 长停顿处换行
     {
-        const auto lines = resegment({rawSegment({QStringLiteral("えっと"), QStringLiteral("それでは")}, 0.0, 0.8, 1.5)}, o);
+        const auto lines = resegment({rawSegment({QStringLiteral("えっと、"), QStringLiteral("それでは")}, 0.0, 0.8, 1.5)}, o);
         expectEq("split at long pause", int(lines.size()), 2);
     }
 
@@ -106,6 +106,20 @@ int main()
         const auto longWord = resegment({rawSegment({QStringLiteral("ああ")}, 10.0, 9.0)}, o);
         check("single long word clipped", longWord.size() == 1 && longWord.first().duration() <= o.maxDuration + 1e-6
                                               && std::abs(longWord.first().end - 19.0) < 1e-6);
+    }
+
+    // 平假名的词不从中间断开：时间超了也不拆（恥ずか|しい），只截短显示时间
+    {
+        const auto lines = resegment({rawSegment({QStringLiteral("恥ずか"), QStringLiteral("しい。")}, 0.0, 3.5)}, o);
+        expectEq("hiragana word kept together", int(lines.size()), 1);
+        expectEq("hiragana word text", lines.value(0).ja, QStringLiteral("恥ずかしい。"));
+        check("over-long line clipped", lines.value(0).duration() <= o.maxDuration + 1e-6);
+        // 助词后面可以断
+        const auto ok = resegment({rawSegment({QStringLiteral("私は"), QStringLiteral("きのう"), QStringLiteral("見ました。")}, 0.0, 0.6, 1.0)}, o);
+        check("split after particle allowed", ok.size() >= 2 && ok.first().ja == QStringLiteral("私は"));
+        // 片假名接平假名词尾不断（ハビー|です）
+        const auto desu = resegment({rawSegment({QStringLiteral("ハビー"), QStringLiteral("です")}, 0.0, 0.6, 1.0)}, o);
+        expectEq("katakana + desu kept", int(desu.size()), 1);
     }
 
     // 太短的碎片并到前一行

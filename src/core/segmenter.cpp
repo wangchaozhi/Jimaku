@@ -37,13 +37,15 @@ bool endsParticle(const QString& text)
     return false;
 }
 
-enum class Script { Kanji, Katakana, Latin, Other };
+enum class Script { Kanji, Hiragana, Katakana, Latin, Other };
 
 Script scriptOf(QChar c)
 {
     const ushort u = c.unicode();
     if ((u >= 0x4E00 && u <= 0x9FFF) || (u >= 0x3400 && u <= 0x4DBF))
         return Script::Kanji;
+    if (u >= 0x3041 && u <= 0x309F)
+        return Script::Hiragana;
     if ((u >= 0x30A0 && u <= 0x30FF) || u == 0x30FC)
         return Script::Katakana;
     if (u < 0x80 && c.isLetterOrNumber())
@@ -51,18 +53,24 @@ Script scriptOf(QChar c)
     return Script::Other;
 }
 
-// 两侧是同一种文字（片假名接片假名、汉字接汉字…）时多半是同一个词被 token 拆开了，不要在这里断
+// 会不会把一个词从中间断开（whisper 的 token 不是词，常常把一个词拆成几段）。
+// 日语字幕可以换行的地方：助词或标点之后，或者下一段以汉字、片假名、英文开头（新词开始）
 bool splitsAWord(const Word& left, const Word& right)
 {
     const QString l = left.text.trimmed();
     const QString r = right.text.trimmed();
     if (l.isEmpty() || r.isEmpty())
         return false;
+    static const QString noLineStart = QStringLiteral("ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ");
+    if (noLineStart.contains(r.front())) // 长音符、小写假名不能放行首
+        return true;
+    if (endsClause(l) || endsSentence(l))
+        return false;
     const Script a = scriptOf(l.back());
     const Script b = scriptOf(r.front());
-    if (r.front() == QChar(0x30FC)) // 长音符 ー 不能放行首
-        return true;
-    return a == b && a != Script::Other;
+    if (b == Script::Hiragana) // 平假名开头的多半是词尾、活用或助词（恥ずか|しい、ハビー|です），只能接在助词后面
+        return !endsParticle(l);
+    return a == b && a != Script::Other; // 片假名接片假名、汉字接汉字、英文接英文
 }
 
 int lengthOf(const QList<Word>& words, int from, int to)
@@ -145,8 +153,12 @@ QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& o)
             while (cur.size() > 1
                    && (lengthOf(cur, 0, cur.size()) > o.maxChars || cur.last().end - cur.first().start > o.maxDuration)) {
                 int j = bestSplit(cur, o);
-                if (j < 0)
-                    j = cur.size() - 1; // 实在没有好位置：最后这个词另起一行
+                if (j < 0) {
+                    // 没有合适的断点：只是时间超了就不拆（后面会截短显示时间），字数超了才硬切
+                    if (lengthOf(cur, 0, cur.size()) <= o.maxChars)
+                        break;
+                    j = cur.size() - 1;
+                }
                 QList<Word> head = cur.mid(0, j);
                 cur = cur.mid(j);
                 flush(head);
@@ -180,7 +192,7 @@ QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& o)
                                    return std::none_of(s.ja.cbegin(), s.ja.cend(), [](QChar c) { return c.isLetterOrNumber(); });
                                }),
                 lines.end());
-    // 单个词却超过最长时长（多半是前面的静音算进了这个词）：保留结尾，把开头往后挪
+    // 超过最长时长又没法拆的行（多半是前面的静音算进了第一个词）：保留结尾，把开头往后挪
     for (Segment& s : lines) {
         if (s.duration() > o.maxDuration)
             s.start = s.end - o.maxDuration;
