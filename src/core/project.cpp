@@ -9,6 +9,8 @@
 #include <QObject>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -65,7 +67,31 @@ Project Project::load(const QString& video, const QString& model)
         p.covered.append({v.toArray().at(0).toDouble(), v.toArray().at(1).toDouble()});
     for (const QJsonValue& v : o.value(QStringLiteral("segments")).toArray())
         p.segments.append(fromJson(v.toObject()));
+    p.segments = sanitizeSegments(p.segments, p.covered, p.complete);
     return p;
+}
+
+QList<Segment> sanitizeSegments(QList<Segment> segments, const QList<TimeRange>& covered, bool complete)
+{
+    std::stable_sort(segments.begin(), segments.end(), [](const Segment& a, const Segment& b) { return a.start < b.start; });
+    QList<Segment> out;
+    for (const Segment& s : segments) {
+        const bool inside = std::any_of(covered.cbegin(), covered.cend(),
+                                        [&](const TimeRange& r) { return s.start >= r.first - 0.05 && s.start < r.second; });
+        if (!complete && !inside)
+            continue;
+        // 和前面某一行时间、文字都相同：重复（只需要和开始时间相同的那几行比）
+        bool duplicate = false;
+        for (int i = int(out.size()) - 1; i >= 0 && s.start - out[i].start < 0.01; --i) {
+            if (std::abs(out[i].end - s.end) < 0.01 && out[i].ja == s.ja) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate)
+            out.append(s);
+    }
+    return out;
 }
 
 bool Project::save(QString* error) const

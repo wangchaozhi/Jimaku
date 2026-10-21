@@ -27,3 +27,7 @@ struct Project {
 
     static QString fileFor(const QString& video); // 便于测试和排查
 };
+
+// 读回进度时整理字幕：按时间排序、去掉完全相同的重复行；没做完的进度还要去掉不在已识别区间里的行
+// （中断时正在识别的那一段已经推送出来的行——续做时这一段会重新识别，留着就会重复）
+QList<Segment> sanitizeSegments(QList<Segment> segments, const QList<TimeRange>& covered, bool complete);

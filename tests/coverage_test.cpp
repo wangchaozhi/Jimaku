@@ -1,6 +1,7 @@
 #include "check.h"
 #include "core/coverage.h"
 #include "core/mediadecoder.h"
+#include "core/project.h"
 #include "core/segment.h"
 
 #include <cmath>
@@ -51,6 +52,26 @@ int main()
     const auto chants = dropRepeats({seg(QStringLiteral("XG!")), seg(QStringLiteral("XG!")), seg(QStringLiteral("XG!")),
                                      seg(QStringLiteral("XG!"))});
     expectEq("short chants kept", int(chants.size()), 4);
+
+    // 读回进度：去掉重复行，没做完时去掉不在已识别区间里的行
+    {
+        auto line = [](double start, double end, const QString& ja) {
+            Segment s;
+            s.start = start;
+            s.end = end;
+            s.ja = ja;
+            return s;
+        };
+        const QList<Segment> saved = {line(10, 12, QStringLiteral("一")), line(5980.5, 5983.4, QStringLiteral("恥ずか")),
+                                      line(5980.5, 5983.4, QStringLiteral("恥ずか")), line(20, 22, QStringLiteral("二")),
+                                      line(5900, 5902, QStringLiteral("中断时那一段"))};
+        const QList<TimeRange> covered = {{0, 5813}};
+        const auto partial = sanitizeSegments(saved, covered, false);
+        expectEq("partial: lines outside coverage dropped", int(partial.size()), 2);
+        check("partial: sorted", partial.value(0).ja == QStringLiteral("一") && partial.value(1).ja == QStringLiteral("二"));
+        const auto done = sanitizeSegments(saved, {{0, 7129}}, true);
+        expectEq("complete: exact duplicate removed", int(done.size()), 4);
+    }
 
     std::printf("%d failure(s)\n", g_failures);
     return g_failures;
