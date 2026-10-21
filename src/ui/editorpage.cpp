@@ -145,24 +145,41 @@ void EditorPage::exportSubtitles()
 
 void EditorPage::burnIn()
 {
+    // Homebrew 默认的 ffmpeg 没有 libass，不能烧进画面：先说明，再提供软字幕
+    bool soft = false;
+    if (!Burner::supportsHardSubtitles()) {
+        QMessageBox box(QMessageBox::Information, tr("无法烧录进画面"),
+                        tr("当前的 ffmpeg 不支持把字幕烧录进画面（编译时没有带 libass）。"), QMessageBox::Cancel, this);
+        box.setInformativeText(tr("可以改为把字幕作为字幕轨嵌入视频：不重新编码，几秒完成，在播放器里可以开关。\n\n"
+                                  "如果一定要烧录进画面，请安装带 libass 的 ffmpeg，例如：\n"
+                                  "brew tap homebrew-ffmpeg/ffmpeg\nbrew install homebrew-ffmpeg/ffmpeg/ffmpeg"));
+        QPushButton* embed = box.addButton(tr("嵌入字幕轨"), QMessageBox::AcceptRole);
+        box.setDefaultButton(embed);
+        box.exec();
+        if (box.clickedButton() != embed)
+            return;
+        soft = true;
+    }
+
     const QFileInfo fi(m_video);
-    const QString out = QFileDialog::getSaveFileName(this, tr("烧录字幕到视频"),
+    const QString out = QFileDialog::getSaveFileName(this, soft ? tr("嵌入字幕轨") : tr("烧录字幕到视频"),
                                                      fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName() + QStringLiteral(".字幕.mp4"),
                                                      tr("MP4 视频 (*.mp4)"));
     if (out.isEmpty())
         return;
 
-    // 烧录总是用 ASS（样式可控），写到临时目录
+    // 硬字幕用 ASS（样式可控），软字幕用 SRT（mov_text 不支持样式），都写到临时目录
     auto* tmp = new QTemporaryDir;
-    const QString ass = tmp->filePath(QStringLiteral("subs.ass"));
+    const QString subs = tmp->filePath(soft ? QStringLiteral("subs.srt") : QStringLiteral("subs.ass"));
     QString error;
-    if (!SubtitleWriter::write(m_model->segments(), ass, SubtitleWriter::Format::Ass, Settings::layout(), &error)) {
+    if (!SubtitleWriter::write(m_model->segments(), subs, soft ? SubtitleWriter::Format::Srt : SubtitleWriter::Format::Ass,
+                               Settings::layout(), &error)) {
         delete tmp;
-        QMessageBox::warning(this, tr("烧录失败"), error);
+        QMessageBox::warning(this, tr("导出失败"), error);
         return;
     }
 
-    auto* dialog = new QProgressDialog(tr("正在把字幕烧录进视频…"), tr("取消"), 0, 1000, this);
+    auto* dialog = new QProgressDialog(soft ? tr("正在把字幕嵌入视频…") : tr("正在把字幕烧录进视频…"), tr("取消"), 0, 1000, this);
     dialog->setWindowModality(Qt::WindowModal);
     dialog->setMinimumDuration(0);
     dialog->setAutoClose(false);
@@ -171,13 +188,17 @@ void EditorPage::burnIn()
     connect(burner, &Burner::progress, dialog, [dialog](double f) { dialog->setValue(int(f * 1000)); });
     connect(dialog, &QProgressDialog::canceled, burner, &Burner::cancel);
     connect(burner, &Burner::finished, this, [this, dialog, tmp, out](bool ok, const QString& err) {
+        dialog->hide(); // 先关掉进度框，再弹结果
         dialog->deleteLater();
         delete tmp;
         if (ok)
-            QMessageBox::information(this, tr("烧录完成"), tr("已保存到：\n%1").arg(out));
+            QMessageBox::information(this, tr("完成"), tr("已保存到：\n%1").arg(out));
         else if (!err.isEmpty())
-            QMessageBox::warning(this, tr("烧录失败"), err);
+            QMessageBox::warning(this, tr("失败"), err);
     });
     dialog->show();
-    burner->start(m_video, ass, out, m_duration);
+    if (soft)
+        burner->startSoft(m_video, subs, out, m_duration);
+    else
+        burner->start(m_video, subs, out, m_duration);
 }

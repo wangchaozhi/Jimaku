@@ -45,7 +45,19 @@ QString Burner::escapeFilterPath(const QString& path)
     return p;
 }
 
-void Burner::start(const QString& video, const QString& assFile, const QString& output, double duration)
+bool Burner::supportsHardSubtitles()
+{
+    const QString ffmpeg = MediaDecoder::findTool(QStringLiteral("ffmpeg"));
+    if (ffmpeg.isEmpty())
+        return false;
+    QProcess p;
+    p.start(ffmpeg, {QStringLiteral("-hide_banner"), QStringLiteral("-filters")});
+    p.waitForFinished(10000);
+    static const QRegularExpression re(QStringLiteral("\\ssubtitles\\s"));
+    return re.match(QString::fromUtf8(p.readAllStandardOutput())).hasMatch();
+}
+
+void Burner::run(const QStringList& args, double duration)
 {
     m_duration = duration;
     m_canceled = false;
@@ -55,9 +67,23 @@ void Burner::start(const QString& video, const QString& assFile, const QString& 
         emit finished(false, tr("找不到 ffmpeg"));
         return;
     }
-    m_process.start(ffmpeg, {QStringLiteral("-nostdin"), QStringLiteral("-y"), QStringLiteral("-i"), video,
-                             QStringLiteral("-vf"), QStringLiteral("subtitles='%1'").arg(escapeFilterPath(assFile)),
-                             QStringLiteral("-c:a"), QStringLiteral("copy"), output});
+    m_process.start(ffmpeg, QStringList{QStringLiteral("-nostdin"), QStringLiteral("-y")} + args);
+}
+
+void Burner::start(const QString& video, const QString& assFile, const QString& output, double duration)
+{
+    run({QStringLiteral("-i"), video, QStringLiteral("-vf"), QStringLiteral("subtitles='%1'").arg(escapeFilterPath(assFile)),
+         QStringLiteral("-c:a"), QStringLiteral("copy"), output},
+        duration);
+}
+
+void Burner::startSoft(const QString& video, const QString& srtFile, const QString& output, double duration)
+{
+    run({QStringLiteral("-i"), video, QStringLiteral("-i"), srtFile, QStringLiteral("-map"), QStringLiteral("0:v"),
+         QStringLiteral("-map"), QStringLiteral("0:a?"), QStringLiteral("-map"), QStringLiteral("1"), QStringLiteral("-c"),
+         QStringLiteral("copy"), QStringLiteral("-c:s"), QStringLiteral("mov_text"), QStringLiteral("-metadata:s:s:0"),
+         QStringLiteral("language=chi"), output},
+        duration);
 }
 
 void Burner::cancel()
