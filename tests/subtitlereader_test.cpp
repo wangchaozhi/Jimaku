@@ -8,7 +8,7 @@
 int main()
 {
     // BOM、CRLF、多行文字、HTML 标签、乱序
-    const QString srt = QStringLiteral("\xFEFF"
+    const QString srt = QString(QChar(0xFEFF)) + QStringLiteral(
                                        "2\r\n00:00:05,500 --> 00:00:07,000\r\n<i>二つ目</i>\r\n\r\n"
                                        "1\r\n00:00:01,000 --> 00:00:03,250\r\nこんにちは\r\n世界\r\n\r\n"
                                        "坏条目\r\n没有时间轴\r\n\r\n"
