@@ -84,7 +84,8 @@ set(APP_SOURCES
     src/ui/timeline.h src/ui/timeline.cpp
     src/ui/subtitlemodel.h src/ui/subtitlemodel.cpp
     src/ui/settingsdialog.h src/ui/settingsdialog.cpp
-    src/ui/modeldownloaddialog.h src/ui/modeldownloaddialog.cpp)
+    src/ui/modeldownloaddialog.h src/ui/modeldownloaddialog.cpp
+    src/ui/updatechecker.h src/ui/updatechecker.cpp)
 
 # 图标：resources/icons/jimaku.svg 生成的 .icns / .ico / png（生成结果已提交）
 if(WIN32)

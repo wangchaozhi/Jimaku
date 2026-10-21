@@ -47,8 +47,12 @@ DropPage::DropPage(QWidget* parent)
     settings->setFlat(true);
     connect(settings, &QPushButton::clicked, this, &DropPage::settingsRequested);
 
+    m_update = new QLabel(this);
+    m_update->setOpenExternalLinks(true);
+    m_update->hide();
     auto* bottom = new QHBoxLayout;
     bottom->addWidget(m_summary, 1);
+    bottom->addWidget(m_update);
     bottom->addWidget(settings);
 
     auto* layout = new QVBoxLayout(this);
@@ -66,6 +70,12 @@ void DropPage::setHighlighted(bool on)
     m_zone->setStyleSheet(on ? QStringLiteral("#dropZone { border: 2px dashed palette(highlight); border-radius: 16px;"
                                               " background: palette(alternate-base); }")
                              : QStringLiteral("#dropZone { border: 2px dashed palette(mid); border-radius: 16px; }"));
+}
+
+void DropPage::showUpdate(const QString& version, const QString& url)
+{
+    m_update->setText(tr("<a href=\"%1\">发现新版本 %2，点此下载</a>").arg(url.toHtmlEscaped(), version.toHtmlEscaped()));
+    m_update->show();
 }
 
 void DropPage::refreshSummary()

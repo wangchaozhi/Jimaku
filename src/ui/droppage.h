@@ -12,6 +12,7 @@ public:
 
     void setHighlighted(bool on); // 拖着文件经过窗口时高亮
     void refreshSummary();        // 底部的"模型 · 翻译服务"一行
+    void showUpdate(const QString& version, const QString& url);
 
 signals:
     void chooseFileRequested();
@@ -20,4 +21,5 @@ signals:
 private:
     QWidget* m_zone;
     QLabel* m_summary;
+    QLabel* m_update;
 };

@@ -1,5 +1,6 @@
 #include "check.h"
 #include "core/errors.h"
+#include "core/version.h"
 
 int main()
 {
@@ -10,6 +11,9 @@ int main()
     expectEq("tool", int(classifyError(QStringLiteral("找不到 ffmpeg")).kind), int(TaskError::Tool));
     expectEq("input", int(classifyError(QStringLiteral("文件不存在：/a.mp4")).kind), int(TaskError::Input));
     check("hint present", !classifyError(QStringLiteral("HTTP 401")).hint.isEmpty());
+    check("version older", compareVersions(QStringLiteral("0.1.0"), QStringLiteral("v0.2.0")) < 0);
+    check("version newer patch", compareVersions(QStringLiteral("1.2.10"), QStringLiteral("1.2.9")) > 0);
+    check("version equal", compareVersions(QStringLiteral("v1.0"), QStringLiteral("1.0.0")) == 0);
     std::printf("%d failure(s)\n", g_failures);
     return g_failures;
 }

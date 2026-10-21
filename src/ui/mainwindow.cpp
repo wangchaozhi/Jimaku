@@ -6,9 +6,11 @@
 #include "droppage.h"
 #include "modeldownloaddialog.h"
 #include "settingsdialog.h"
+#include "updatechecker.h"
 #include "workspacepage.h"
 
 #include <QCloseEvent>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
@@ -67,6 +69,29 @@ MainWindow::MainWindow(QWidget* parent)
     redo->setShortcut(QKeySequence::Redo);
     editMenu->addAction(undo);
     editMenu->addAction(redo);
+
+    // 检查更新：启动时自动（一天一次，静默），帮助菜单里手动
+    auto* updates = new UpdateChecker(this);
+    connect(updates, &UpdateChecker::updateAvailable, m_drop, &DropPage::showUpdate);
+    auto* help = menuBar()->addMenu(tr("帮助"));
+    help->addAction(tr("检查更新…"), this, [this, updates] {
+        auto* box = new QObject(this); // 手动检查的结果弹窗，收到一次后断开
+        connect(updates, &UpdateChecker::updateAvailable, box, [this, box](const QString& v, const QString& url) {
+            box->deleteLater();
+            if (QMessageBox::question(this, tr("检查更新"), tr("发现新版本 %1，要打开下载页吗？").arg(v)) == QMessageBox::Yes)
+                QDesktopServices::openUrl(QUrl(url));
+        });
+        connect(updates, &UpdateChecker::upToDate, box, [this, box] {
+            box->deleteLater();
+            QMessageBox::information(this, tr("检查更新"), tr("已经是最新版本（%1）").arg(QStringLiteral(APP_VERSION)));
+        });
+        connect(updates, &UpdateChecker::failed, box, [this, box](const QString& e) {
+            box->deleteLater();
+            QMessageBox::warning(this, tr("检查更新"), tr("检查失败：%1").arg(e));
+        });
+        updates->check(false);
+    });
+    QTimer::singleShot(3000, updates, [updates] { updates->check(true); });
 
     connect(m_drop, &DropPage::chooseFileRequested, this, &MainWindow::chooseFile);
     connect(m_drop, &DropPage::settingsRequested, this, &MainWindow::openSettings);
