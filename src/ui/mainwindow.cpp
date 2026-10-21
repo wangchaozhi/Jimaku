@@ -2,6 +2,7 @@
 
 #include "core/modelmanager.h"
 #include "core/settings.h"
+#include "core/subtitlereader.h"
 #include "droppage.h"
 #include "modeldownloaddialog.h"
 #include "settingsdialog.h"
@@ -51,6 +52,7 @@ MainWindow::MainWindow(QWidget* parent)
     auto* file = menuBar()->addMenu(tr("文件"));
     QAction* open = file->addAction(tr("打开视频…"), this, &MainWindow::chooseFile);
     open->setShortcut(QKeySequence::Open);
+    file->addAction(tr("导入字幕…"), this, &MainWindow::importSubtitles);
     QAction* prefs = file->addAction(tr("设置…"), this, &MainWindow::openSettings);
     prefs->setShortcut(QKeySequence::Preferences);
     prefs->setMenuRole(QAction::PreferencesRole); // macOS 放到应用菜单里
@@ -145,6 +147,31 @@ void MainWindow::chooseFile()
         tr("视频或音频 (*.mp4 *.mkv *.mov *.avi *.webm *.flv *.ts *.m4v *.mp3 *.m4a *.wav *.flac *.aac *.ogg);;所有文件 (*)"));
     if (!path.isEmpty())
         startFile(path);
+}
+
+void MainWindow::importSubtitles()
+{
+    if (m_pipeline->isRunning())
+        return;
+    const QString srt = QFileDialog::getOpenFileName(this, tr("导入字幕"), QString(), tr("SRT 字幕 (*.srt)"));
+    if (srt.isEmpty())
+        return;
+    QList<Segment> segments;
+    QString error;
+    if (!SubtitleReader::readFile(srt, &segments, &error)) {
+        QMessageBox::warning(this, tr("导入失败"), error);
+        return;
+    }
+    QString video = SubtitleReader::findVideoFor(srt);
+    if (video.isEmpty()) {
+        video = QFileDialog::getOpenFileName(this, tr("选择这份字幕对应的视频"), QFileInfo(srt).absolutePath(),
+                                             tr("视频或音频 (*.mp4 *.mkv *.mov *.avi *.webm *.flv *.ts *.m4v *.mp3 *.m4a *.wav);;所有文件 (*)"));
+        if (video.isEmpty())
+            return;
+    }
+    m_currentFile = video;
+    m_workspace->openImported(video, Settings::asrModel(), segments);
+    m_pages->setCurrentWidget(m_workspace);
 }
 
 bool MainWindow::ensureModel()

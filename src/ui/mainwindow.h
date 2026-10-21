@@ -24,6 +24,7 @@ protected:
 
 private:
     void chooseFile();
+    void importSubtitles();
     void startFile(const QString& path);
     bool ensureModel();
     bool ensureApiKey();

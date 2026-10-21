@@ -320,6 +320,24 @@ void WorkspacePage::loadPreview(const QString& video)
     m_remuxer->startRemux(video, out, qMax(m_duration, MediaDecoder::probeDuration(video, &error)));
 }
 
+void WorkspacePage::openImported(const QString& videoPath, const QString& model, const QList<Segment>& segments)
+{
+    QString error;
+    const double duration = MediaDecoder::probeDuration(videoPath, &error);
+    Project p;
+    p.video = videoPath;
+    p.model = model;
+    p.duration = qMax(0.0, duration);
+    p.covered = {{0, qMax(p.duration, segments.isEmpty() ? 0.0 : segments.last().end)}}; // 不需要再识别
+    p.segments = segments;
+    begin(videoPath, model, p);
+    m_summary = tr("导入的字幕");
+    setProcessing(false);
+    m_complete = m_model->untranslatedCount() == 0;
+    updateBanner();
+    saveProject();
+}
+
 bool WorkspacePage::covered(double seconds) const
 {
     return std::any_of(m_coverage.cbegin(), m_coverage.cend(),

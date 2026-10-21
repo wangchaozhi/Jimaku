@@ -27,6 +27,8 @@ public:
     void begin(const QString& videoPath, const QString& model, const Project& resume = {});
     // 直接打开上次处理完的结果（不再处理）
     void openResult(const Project& project);
+    // 打开导入的字幕（文字当作日文；没有译文的行可以用"重试翻译"补上）
+    void openImported(const QString& videoPath, const QString& model, const QList<Segment>& segments);
     void setStage(const QString& text);
     void addLines(const QList<Segment>& lines);
     void addTranslations(const QList<int>& ids, const QStringList& zh);
