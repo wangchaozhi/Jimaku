@@ -126,6 +126,7 @@ void Pipeline::runAll(const PipelineOptions& o)
         return;
     }
     result.loadSeconds = timer.restart() / 1000.0;
+    m_transcriber->setDecoding(o.decoding);
 
     // 3. 分段识别 + 断句 + 翻译同时进行
     enter(Transcribing);

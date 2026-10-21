@@ -15,6 +15,11 @@ struct whisper_context;
 // 固定 language="ja"、不用 whisper 自带的 translate（翻译交给 Translator）
 class Transcriber {
 public:
+    // 解码策略：Greedy = 贪心 + 温度回退（whisper 默认，解码失败时随机采样重试，结果每次可能不同）；
+    // GreedyNoFallback = 只用贪心；BeamSearch = 束搜索（宽度 5），不回退
+    enum class Decoding { Greedy, GreedyNoFallback, BeamSearch };
+    void setDecoding(Decoding d) { m_decoding = d; }
+
     Transcriber() = default;
     ~Transcriber();
     Transcriber(const Transcriber&) = delete;
@@ -35,6 +40,7 @@ public:
 
 private:
     whisper_context* m_ctx = nullptr;
+    Decoding m_decoding = Decoding::Greedy;
     QString m_modelPath;
 };
 

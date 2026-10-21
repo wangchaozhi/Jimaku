@@ -121,7 +121,12 @@ QList<Segment> Transcriber::transcribe(const std::vector<float>& pcm,
         return {};
     }
 
-    whisper_full_params wp = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    whisper_full_params wp = whisper_full_default_params(m_decoding == Decoding::BeamSearch ? WHISPER_SAMPLING_BEAM_SEARCH
+                                                                                            : WHISPER_SAMPLING_GREEDY);
+    if (m_decoding == Decoding::BeamSearch)
+        wp.beam_search.beam_size = 5;
+    if (m_decoding != Decoding::Greedy)
+        wp.temperature_inc = 0.0f; // 不做温度回退：同样的音频每次结果一样
     wp.language = "ja";
     wp.translate = false;
     wp.token_timestamps = true;

@@ -58,6 +58,7 @@ int runCli(int argc, char** argv)
     p.addOption({QStringLiteral("no-translate"), QStringLiteral("只识别，不翻译")});
     p.addOption({QStringLiteral("no-review"), QStringLiteral("翻译后不做全片校对（统一人名、纠正识别错误）")});
     p.addOption({QStringLiteral("no-cache"), QStringLiteral("不使用翻译缓存")});
+    p.addOption({QStringLiteral("decode"), QStringLiteral("解码策略：greedy / nofallback / beam"), QStringLiteral("mode")});
     p.addOption({QStringLiteral("chunk"), QStringLiteral("长视频分段识别时每段的秒数（默认 300）"), QStringLiteral("seconds")});
     p.addPositionalArgument(QStringLiteral("video"), QStringLiteral("视频或音频文件"));
     p.process(app);
@@ -75,6 +76,11 @@ int runCli(int argc, char** argv)
     o.input = input;
     o.modelPath = ModelManager::modelPath(modelId);
     o.translate = !p.isSet(QStringLiteral("no-translate"));
+    const QString decode = p.value(QStringLiteral("decode"));
+    if (decode == QLatin1String("nofallback"))
+        o.decoding = Transcriber::Decoding::GreedyNoFallback;
+    else if (decode == QLatin1String("beam"))
+        o.decoding = Transcriber::Decoding::BeamSearch;
     if (p.isSet(QStringLiteral("chunk"))) {
         o.chunkLength = qMax(30.0, p.value(QStringLiteral("chunk")).toDouble());
         o.firstChunk = qMin(o.firstChunk, o.chunkLength);

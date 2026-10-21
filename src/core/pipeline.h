@@ -22,6 +22,7 @@ struct PipelineOptions {
     // 长视频分段识别：第一段短一些，第一行字幕更快出现
     double firstChunk = 60;
     double chunkLength = 300;
+    Transcriber::Decoding decoding = Transcriber::Decoding::Greedy;
     // 断点续做：上次已经识别的区间和字幕（按时间排序，id 按这里的顺序重新编号）
     QList<TimeRange> resumeCovered;
     QList<Segment> resumeSegments;
