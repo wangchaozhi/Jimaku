@@ -54,8 +54,6 @@ EditorPage::EditorPage(QWidget* parent)
     m_table->setWordWrap(true);
     m_table->setAlternatingRowColors(true);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_table->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed
-                             | QAbstractItemView::AnyKeyPressed);
     m_table->horizontalHeader()->setSectionResizeMode(SubtitleModel::Time, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(SubtitleModel::Japanese, QHeaderView::Stretch);
     m_table->horizontalHeader()->setSectionResizeMode(SubtitleModel::Chinese, QHeaderView::Stretch);
@@ -106,6 +104,10 @@ void EditorPage::setRetranslating(bool on)
 {
     m_retry->setEnabled(!on);
     m_retry->setText(on ? tr("翻译中…") : tr("重试翻译"));
+    // 补译结果会整体替换表格内容，期间不允许编辑，免得改动被覆盖
+    m_table->setEditTriggers(on ? QAbstractItemView::NoEditTriggers
+                                : QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed
+                                      | QAbstractItemView::AnyKeyPressed);
     updateBanner();
 }
 
