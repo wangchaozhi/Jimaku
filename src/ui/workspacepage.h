@@ -43,6 +43,7 @@ public:
     void setRetranslating(bool on);
     void stopPlayback();
     void applySettings(); // 设置改了：字幕位置、字号
+    void setQueueCount(int remaining); // 批量处理：后面还有几个
 
     QList<Segment> segments() const;
     QUndoStack* undoStack() const { return m_undo; }
@@ -96,6 +97,7 @@ private:
     TaskError m_translateError;
     QString m_lastTranslateError;
     QString m_summary; // 完成后的统计（术语、纠错、用量），显示在顶栏
+    int m_queueCount = 0;
 
     QLabel* m_title;
     QLabel* m_status;

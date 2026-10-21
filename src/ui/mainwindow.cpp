@@ -18,19 +18,21 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUndoStack>
 
 namespace {
 
-QString firstLocalFile(const QMimeData* mime)
+QStringList localFiles(const QMimeData* mime)
 {
+    QStringList files;
     if (!mime || !mime->hasUrls())
-        return {};
+        return files;
     for (const QUrl& url : mime->urls()) {
         if (url.isLocalFile() && QFileInfo(url.toLocalFile()).isFile())
-            return url.toLocalFile();
+            files << url.toLocalFile();
     }
-    return {};
+    return files;
 }
 
 } // namespace
@@ -91,10 +93,18 @@ MainWindow::MainWindow(QWidget* parent)
             return;
         }
         m_workspace->finish(r);
+        if (!m_queue.isEmpty())
+            QTimer::singleShot(1500, this, &MainWindow::startNextInQueue);
+        else
+            m_batch = false;
     });
     connect(m_pipeline, &Pipeline::failed, this, [this](const TaskError& e) {
         m_retranslating = false;
         m_workspace->fail(e);
+        if (!m_queue.isEmpty()) // 一个失败不影响后面的
+            QTimer::singleShot(1500, this, &MainWindow::startNextInQueue);
+        else
+            m_batch = false;
     });
     connect(m_pipeline, &Pipeline::canceled, this, [this] {
         if (m_retranslating) {
@@ -102,6 +112,8 @@ MainWindow::MainWindow(QWidget* parent)
             m_workspace->setRetranslating(false);
             return;
         }
+        m_queue.clear(); // 取消就整个队列都停下
+        m_batch = false;
         showDropPage();
     });
 }
@@ -114,7 +126,7 @@ void MainWindow::showDropPage()
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (!m_pipeline->isRunning() && !firstLocalFile(event->mimeData()).isEmpty()) {
+    if (!m_pipeline->isRunning() && !localFiles(event->mimeData()).isEmpty()) {
         event->acceptProposedAction();
         showDropPage();
         m_drop->setHighlighted(true);
@@ -129,10 +141,10 @@ void MainWindow::dragLeaveEvent(QDragLeaveEvent*)
 void MainWindow::dropEvent(QDropEvent* event)
 {
     m_drop->setHighlighted(false);
-    const QString path = firstLocalFile(event->mimeData());
-    if (!path.isEmpty()) {
+    const QStringList files = localFiles(event->mimeData());
+    if (!files.isEmpty()) {
         event->acceptProposedAction();
-        startFile(path);
+        startFiles(files);
     }
 }
 
@@ -151,11 +163,30 @@ void MainWindow::chooseFile()
 {
     if (m_pipeline->isRunning())
         return;
-    const QString path = QFileDialog::getOpenFileName(
-        this, tr("选择日语视频"), QStandardPaths::writableLocation(QStandardPaths::MoviesLocation),
+    const QStringList paths = QFileDialog::getOpenFileNames(
+        this, tr("选择日语视频（可以多选，依次处理）"), QStandardPaths::writableLocation(QStandardPaths::MoviesLocation),
         tr("视频或音频 (*.mp4 *.mkv *.mov *.avi *.webm *.flv *.ts *.m4v *.mp3 *.m4a *.wav *.flac *.aac *.ogg);;所有文件 (*)"));
-    if (!path.isEmpty())
-        startFile(path);
+    if (!paths.isEmpty())
+        startFiles(paths);
+}
+
+void MainWindow::startFiles(const QStringList& paths)
+{
+    if (m_pipeline->isRunning() || paths.isEmpty())
+        return;
+    m_batch = paths.size() > 1;
+    m_queue = paths.mid(1);
+    m_workspace->setQueueCount(int(m_queue.size()));
+    startFile(paths.first());
+}
+
+void MainWindow::startNextInQueue()
+{
+    if (m_pipeline->isRunning() || m_queue.isEmpty())
+        return;
+    const QString next = m_queue.takeFirst();
+    m_workspace->setQueueCount(int(m_queue.size()));
+    startFile(next);
 }
 
 void MainWindow::importSubtitles()
@@ -218,6 +249,13 @@ void MainWindow::startFile(const QString& path)
         return;
     const QString model = Settings::asrModel();
     Project previous = Project::load(path, model);
+    if (previous.complete && m_batch) { // 批量时处理过的直接跳过，不逐个询问
+        if (!m_queue.isEmpty())
+            QTimer::singleShot(0, this, &MainWindow::startNextInQueue);
+        else
+            m_batch = false;
+        return;
+    }
     if (previous.complete) {
         QMessageBox box(QMessageBox::Question, tr("已经处理过"), tr("这个视频之前已经生成过字幕。"), QMessageBox::NoButton, this);
         QPushButton* open = box.addButton(tr("打开上次的结果"), QMessageBox::AcceptRole);

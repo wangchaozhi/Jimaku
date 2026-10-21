@@ -26,6 +26,9 @@ private:
     void chooseFile();
     void importSubtitles();
     void startFile(const QString& path);
+    // 批量：拖入或选中多个视频，依次处理（已处理过的跳过）
+    void startFiles(const QStringList& paths);
+    void startNextInQueue();
     bool ensureModel();
     bool ensureApiKey();
     void openSettings();
@@ -38,4 +41,6 @@ private:
     WorkspacePage* m_workspace;
     QString m_currentFile;
     bool m_retranslating = false;
+    QStringList m_queue;  // 批量处理中还没开始的视频
+    bool m_batch = false;
 };

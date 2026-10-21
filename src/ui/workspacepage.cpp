@@ -634,6 +634,12 @@ void WorkspacePage::deleteSelected()
     m_model->applyEdit(after, tr("删除 %1 行").arg(rows.size()));
 }
 
+void WorkspacePage::setQueueCount(int remaining)
+{
+    m_queueCount = remaining;
+    refreshStatus();
+}
+
 void WorkspacePage::applySettings()
 {
     m_view->setAppearance(Settings::appearance());
@@ -656,16 +662,17 @@ QList<Segment> WorkspacePage::segments() const
 
 void WorkspacePage::refreshStatus()
 {
+    const QString queue = m_queueCount > 0 ? tr(" · 队列中还有 %1 个").arg(m_queueCount) : QString();
     const int lines = m_model->rowCount();
     if (!m_processing) {
         QString text = lines > 0 ? tr("共 %1 行字幕").arg(lines) : QString();
         if (!m_summary.isEmpty())
             text += QStringLiteral(" · ") + m_summary;
-        m_status->setText(text);
+        m_status->setText(text + queue);
         return;
     }
     if (lines == 0 || m_stage == tr("正在取消…")) {
-        m_status->setText(m_stage);
+        m_status->setText(m_stage + queue);
         return;
     }
     double done = 0;
@@ -680,7 +687,7 @@ void WorkspacePage::refreshStatus()
         text += minutes <= 1 ? tr(" · 预计不到 1 分钟") : tr(" · 预计还要 %1 分钟").arg(minutes);
     }
     text += tr(" · 已翻译 %1 / %2 行").arg(qMin(m_translated, lines)).arg(lines);
-    m_status->setText(text);
+    m_status->setText(text + queue);
 }
 
 void WorkspacePage::refreshOverlay()
