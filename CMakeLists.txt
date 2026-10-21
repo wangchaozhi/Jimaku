@@ -86,12 +86,24 @@ set(APP_SOURCES
     src/ui/settingsdialog.h src/ui/settingsdialog.cpp
     src/ui/modeldownloaddialog.h src/ui/modeldownloaddialog.cpp)
 
-qt_add_executable(Jimaku WIN32 MACOSX_BUNDLE ${APP_SOURCES})
+# 图标：resources/icons/jimaku.svg 生成的 .icns / .ico / png（生成结果已提交）
+if(WIN32)
+    set(APP_ICON_SOURCES resources/icons/jimaku.rc)
+    set_source_files_properties(resources/icons/jimaku.rc PROPERTIES
+        OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/jimaku.ico)
+elseif(APPLE)
+    set(APP_ICON_SOURCES resources/icons/jimaku.icns)
+    set_source_files_properties(resources/icons/jimaku.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+endif()
+
+qt_add_executable(Jimaku WIN32 MACOSX_BUNDLE ${APP_SOURCES} ${APP_ICON_SOURCES})
+qt_add_resources(Jimaku "icons" PREFIX "/" FILES resources/icons/jimaku-256.png)
 target_compile_definitions(Jimaku PRIVATE APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(Jimaku PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets jimaku_core)
 set_target_properties(Jimaku PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME Jimaku
     MACOSX_BUNDLE_GUI_IDENTIFIER io.github.wangchaozhi.jimaku
+    MACOSX_BUNDLE_ICON_FILE jimaku.icns
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
 

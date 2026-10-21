@@ -3,6 +3,7 @@
 
 #include <QApplication>
 #include <QFileInfo>
+#include <QIcon>
 #include <QTimer>
 #include <cstring>
 
@@ -21,6 +22,7 @@ int main(int argc, char** argv)
 
     QApplication app(argc, argv);
     QApplication::setApplicationDisplayName(QStringLiteral("Jimaku"));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/resources/icons/jimaku-256.png")));
     MainWindow w;
     w.show();
     // Jimaku 视频.mp4：启动后直接开始处理
