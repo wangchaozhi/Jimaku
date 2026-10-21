@@ -32,6 +32,8 @@ private:
     QPushButton* m_download;
     QComboBox* m_format;
     QComboBox* m_layout;
+    QComboBox* m_position;
+    QComboBox* m_size;
     QPlainTextEdit* m_glossary;
     QCheckBox* m_style;
     QCheckBox* m_lyrics;

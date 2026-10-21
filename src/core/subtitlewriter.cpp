@@ -69,8 +69,11 @@ QString toSrt(const QList<Segment>& segments, Layout layout)
     return out;
 }
 
-QString toAss(const QList<Segment>& segments, Layout layout)
+QString toAss(const QList<Segment>& segments, Layout layout, const Appearance& appearance)
 {
+    const int mainSize = int(std::lround(64 * appearance.scale));
+    const int subSize = int(std::lround(44 * appearance.scale));
+    const int alignment = appearance.top ? 8 : 2; // ASS 小键盘方位：8 顶部居中，2 底部居中
     // 中文用默认样式，双语时日文小一号放在下面
     QString out = QStringLiteral(
         "[Script Info]\n"
@@ -84,10 +87,10 @@ QString toAss(const QList<Segment>& segments, Layout layout)
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
         "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
         "MarginR, MarginV, Encoding\n"
-        "Style: Default,PingFang SC,64,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,1,2,60,60,50,1\n"
+        "Style: Default,PingFang SC,%1,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,1,%2,60,60,50,1\n"
         "\n"
         "[Events]\n"
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n").arg(mainSize).arg(alignment);
     for (const Segment& s : segments) {
         QStringList lines = linesFor(s, layout);
         for (QString& l : lines)
@@ -96,20 +99,21 @@ QString toAss(const QList<Segment>& segments, Layout layout)
             continue;
         QString text = lines.first();
         if (lines.size() > 1)
-            text += QStringLiteral("\\N{\\fs44}") + lines.at(1);
+            text += QStringLiteral("\\N{\\fs%1}").arg(subSize) + lines.at(1);
         out += QStringLiteral("Dialogue: 0,%1,%2,Default,,0,0,0,,%3\n").arg(formatAssTime(s.start), formatAssTime(s.end), text);
     }
     return out;
 }
 
-bool write(const QList<Segment>& segments, const QString& path, Format format, Layout layout, QString* error)
+bool write(const QList<Segment>& segments, const QString& path, Format format, Layout layout, QString* error,
+           const Appearance& appearance)
 {
     QSaveFile f(path);
     if (!f.open(QIODevice::WriteOnly)) {
         *error = QObject::tr("无法写入 %1：%2").arg(path, f.errorString());
         return false;
     }
-    const QString text = format == Format::Ass ? toAss(segments, layout) : toSrt(segments, layout);
+    const QString text = format == Format::Ass ? toAss(segments, layout, appearance) : toSrt(segments, layout);
     if (format == Format::Ass)
         f.write("\xEF\xBB\xBF"); // 部分播放器需要 BOM 才按 UTF-8 读 ASS
     f.write(text.toUtf8());

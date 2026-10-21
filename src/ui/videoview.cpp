@@ -6,7 +6,7 @@
 #include <QPainter>
 #include <QPainterPath>
 
-// 在视频区域底部居中画两行带描边的字幕（不依赖播放器自带的字幕渲染）
+// 在视频区域底部（或顶部）居中画两行带描边的字幕（不依赖播放器自带的字幕渲染）
 class SubtitleItem : public QGraphicsItem {
 public:
     void setVideoRect(const QRectF& r)
@@ -23,6 +23,11 @@ public:
         m_hint = hint;
         update();
     }
+    void setAppearance(const SubtitleWriter::Appearance& a)
+    {
+        m_appearance = a;
+        update();
+    }
     QRectF boundingRect() const override { return m_rect; }
 
     void paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) override
@@ -31,8 +36,10 @@ public:
             return;
         p->setRenderHint(QPainter::Antialiasing);
         const qreal h = m_rect.height();
-        qreal bottom = m_rect.bottom() - h * 0.05;
-        // 自下而上：提示、日文、中文
+        const bool top = m_appearance.top;
+        const qreal k = m_appearance.scale;
+        // 底部：自下而上画 提示、日文、中文；顶部：自上而下画 中文、日文、提示
+        qreal cursor = top ? m_rect.top() + h * 0.05 : m_rect.bottom() - h * 0.05;
         auto line = [&](const QString& text, qreal size, const QColor& fill) {
             if (text.isEmpty())
                 return;
@@ -42,23 +49,31 @@ public:
             const QFontMetricsF fm(f);
             const QString shown = fm.elidedText(text, Qt::ElideRight, m_rect.width() * 0.94);
             QPainterPath path;
-            path.addText(m_rect.center().x() - fm.horizontalAdvance(shown) / 2, bottom - fm.descent(), f, shown);
+            const qreal baseline = top ? cursor + fm.ascent() : cursor - fm.descent();
+            path.addText(m_rect.center().x() - fm.horizontalAdvance(shown) / 2, baseline, f, shown);
             p->setPen(QPen(QColor(0, 0, 0, 220), size * 0.16, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
             p->setBrush(Qt::NoBrush);
             p->drawPath(path);
             p->setPen(Qt::NoPen);
             p->setBrush(fill);
             p->drawPath(path);
-            bottom -= fm.height() * 1.05;
+            cursor += (top ? 1 : -1) * fm.height() * 1.05;
         };
-        line(m_hint, h * 0.040, QColor(200, 200, 200));
-        line(m_secondary, h * 0.045, QColor(235, 235, 235));
-        line(m_primary, h * 0.062, Qt::white);
+        if (top) {
+            line(m_primary, h * 0.062 * k, Qt::white);
+            line(m_secondary, h * 0.045 * k, QColor(235, 235, 235));
+            line(m_hint, h * 0.040, QColor(200, 200, 200));
+        } else {
+            line(m_hint, h * 0.040, QColor(200, 200, 200));
+            line(m_secondary, h * 0.045 * k, QColor(235, 235, 235));
+            line(m_primary, h * 0.062 * k, Qt::white);
+        }
     }
 
 private:
     QRectF m_rect;
     QString m_primary, m_secondary, m_hint;
+    SubtitleWriter::Appearance m_appearance;
 };
 
 VideoView::VideoView(QWidget* parent)
@@ -82,6 +97,11 @@ VideoView::VideoView(QWidget* parent)
 void VideoView::setSubtitle(const QString& primary, const QString& secondary, const QString& hint)
 {
     m_subtitle->setText(primary, secondary, hint);
+}
+
+void VideoView::setAppearance(const SubtitleWriter::Appearance& appearance)
+{
+    m_subtitle->setAppearance(appearance);
 }
 
 void VideoView::resizeEvent(QResizeEvent* event)

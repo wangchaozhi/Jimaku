@@ -39,6 +39,7 @@ public:
     void setRetranslated(const PipelineResult& result);
     void setRetranslating(bool on);
     void stopPlayback();
+    void applySettings(); // 设置改了：字幕位置、字号
 
     QList<Segment> segments() const;
 

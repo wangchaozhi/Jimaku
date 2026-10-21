@@ -35,6 +35,10 @@ void setOutputFormat(SubtitleWriter::Format format);
 SubtitleWriter::Layout layout();
 void setLayout(SubtitleWriter::Layout layout);
 
+// 字幕外观：位置（顶部 / 底部）和字号倍数
+SubtitleWriter::Appearance appearance();
+void setAppearance(const SubtitleWriter::Appearance& a);
+
 // 翻译风格
 bool subtitleStyle();   // 句末不加标点、逗号换空格、译文尽量短（默认开）
 void setSubtitleStyle(bool on);

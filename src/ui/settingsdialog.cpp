@@ -95,10 +95,28 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     m_layout->addItem(tr("仅中文"), int(SubtitleWriter::Layout::ChineseOnly));
     m_layout->addItem(tr("仅日文"), int(SubtitleWriter::Layout::JapaneseOnly));
     m_layout->setCurrentIndex(m_layout->findData(int(Settings::layout())));
+    const SubtitleWriter::Appearance look = Settings::appearance();
+    m_position = new QComboBox(this);
+    m_position->addItem(tr("底部"), false);
+    m_position->addItem(tr("顶部（视频自带字幕在底部时）"), true);
+    m_position->setCurrentIndex(look.top ? 1 : 0);
+    m_size = new QComboBox(this);
+    m_size->addItem(tr("小"), 0.8);
+    m_size->addItem(tr("中"), 1.0);
+    m_size->addItem(tr("大"), 1.25);
+    m_size->addItem(tr("特大"), 1.5);
+    int sizeIndex = 1;
+    for (int i = 0; i < m_size->count(); ++i) {
+        if (qAbs(m_size->itemData(i).toDouble() - look.scale) < 0.01)
+            sizeIndex = i;
+    }
+    m_size->setCurrentIndex(sizeIndex);
     auto* outBox = new QGroupBox(tr("输出"), this);
     auto* of = new QFormLayout(outBox);
     of->addRow(tr("格式"), m_format);
     of->addRow(tr("内容"), m_layout);
+    of->addRow(tr("字幕位置"), m_position);
+    of->addRow(tr("字幕大小"), m_size);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);
@@ -174,5 +192,6 @@ void SettingsDialog::accept()
     Settings::setAsrModel(m_asrModel->currentData().toString());
     Settings::setOutputFormat(SubtitleWriter::Format(m_format->currentData().toInt()));
     Settings::setLayout(SubtitleWriter::Layout(m_layout->currentData().toInt()));
+    Settings::setAppearance({m_position->currentData().toBool(), m_size->currentData().toDouble()});
     QDialog::accept();
 }

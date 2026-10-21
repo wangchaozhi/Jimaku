@@ -112,6 +112,22 @@ void setLayout(SubtitleWriter::Layout layout)
     QSettings().setValue(QStringLiteral("output/layout"), QLatin1String(v));
 }
 
+SubtitleWriter::Appearance appearance()
+{
+    QSettings s;
+    SubtitleWriter::Appearance a;
+    a.top = s.value(QStringLiteral("subtitle/top"), false).toBool();
+    a.scale = qBound(0.6, s.value(QStringLiteral("subtitle/scale"), 1.0).toDouble(), 2.0);
+    return a;
+}
+
+void setAppearance(const SubtitleWriter::Appearance& a)
+{
+    QSettings s;
+    s.setValue(QStringLiteral("subtitle/top"), a.top);
+    s.setValue(QStringLiteral("subtitle/scale"), a.scale);
+}
+
 bool subtitleStyle()
 {
     return QSettings().value(QStringLiteral("translate/subtitleStyle"), true).toBool();

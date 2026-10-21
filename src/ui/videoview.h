@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/subtitlewriter.h"
+
 #include <QGraphicsView>
 
 class QGraphicsVideoItem;
@@ -15,6 +17,7 @@ public:
     QGraphicsVideoItem* videoItem() const { return m_video; }
     // 主字幕（中文，大）、副字幕（日文，小）、提示（灰色，如"翻译中…"）
     void setSubtitle(const QString& primary, const QString& secondary, const QString& hint = QString());
+    void setAppearance(const SubtitleWriter::Appearance& appearance);
 
 signals:
     void clicked();

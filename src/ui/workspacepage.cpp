@@ -89,6 +89,7 @@ WorkspacePage::WorkspacePage(QWidget* parent)
 
     // 视频 + 播放控制
     m_view = new VideoView(this);
+    m_view->setAppearance(Settings::appearance());
     m_player = new QMediaPlayer(this);
     m_audio = new QAudioOutput(this);
     m_player->setAudioOutput(m_audio);
@@ -497,6 +498,11 @@ void WorkspacePage::setRetranslating(bool on)
     updateBanner();
 }
 
+void WorkspacePage::applySettings()
+{
+    m_view->setAppearance(Settings::appearance());
+}
+
 void WorkspacePage::stopPlayback()
 {
     if (m_remuxer) {
@@ -593,7 +599,7 @@ void WorkspacePage::exportSubtitles()
     if (path.isEmpty())
         return;
     QString error;
-    if (!SubtitleWriter::write(m_model->segments(), path, format, Settings::layout(), &error))
+    if (!SubtitleWriter::write(m_model->segments(), path, format, Settings::layout(), &error, Settings::appearance()))
         QMessageBox::warning(this, tr("导出失败"), error);
 }
 
@@ -627,7 +633,7 @@ void WorkspacePage::burnIn()
     const QString subs = tmp->filePath(soft ? QStringLiteral("subs.srt") : QStringLiteral("subs.ass"));
     QString error;
     if (!SubtitleWriter::write(m_model->segments(), subs, soft ? SubtitleWriter::Format::Srt : SubtitleWriter::Format::Ass,
-                               Settings::layout(), &error)) {
+                               Settings::layout(), &error, Settings::appearance())) {
         delete tmp;
         QMessageBox::warning(this, tr("导出失败"), error);
         return;

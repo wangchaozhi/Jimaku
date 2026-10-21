@@ -228,6 +228,8 @@ void MainWindow::retranslate()
 void MainWindow::openSettings()
 {
     SettingsDialog dialog(this);
-    if (dialog.exec() == QDialog::Accepted)
+    if (dialog.exec() == QDialog::Accepted) {
         m_drop->refreshSummary();
+        m_workspace->applySettings();
+    }
 }
