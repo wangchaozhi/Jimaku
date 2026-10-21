@@ -87,6 +87,25 @@ set_target_properties(Jimaku PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
 
+# macOS：钥匙串的"始终允许"绑定在签名上。默认的临时签名每次编译都会变，于是每次都弹窗；
+# 用固定的证书签名（钥匙串里有名为 "Jimaku Dev" 的代码签名证书时自动使用）就只需授权一次
+# （也可以用 -DJIMAKU_CODESIGN_IDENTITY=... 指定别的证书）
+if(APPLE)
+    set(_identity "${JIMAKU_CODESIGN_IDENTITY}")
+    if(NOT _identity)
+        execute_process(COMMAND security find-identity -p codesigning OUTPUT_VARIABLE _identities ERROR_QUIET)
+        if(_identities MATCHES "\"Jimaku Dev\"")
+            set(_identity "Jimaku Dev")
+        endif()
+    endif()
+    if(_identity)
+        message(STATUS "Jimaku: signing with \"${_identity}\"")
+        add_custom_command(TARGET Jimaku POST_BUILD
+            COMMAND codesign --force --sign "${_identity}" "$<TARGET_BUNDLE_DIR:Jimaku>"
+            VERBATIM)
+    endif()
+endif()
+
 # --- 单元测试 ---------------------------------------------------------------
 option(JIMAKU_BUILD_TESTS "Build unit tests" ON)
 if(JIMAKU_BUILD_TESTS)
