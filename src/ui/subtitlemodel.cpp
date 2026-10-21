@@ -1,8 +1,10 @@
 #include "subtitlemodel.h"
 
 #include <QColor>
+#include <QFont>
 #include <QGuiApplication>
 #include <QPalette>
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -23,6 +25,57 @@ void SubtitleModel::setSegments(const QList<Segment>& segments)
     beginResetModel();
     m_segments = segments;
     endResetModel();
+}
+
+void SubtitleModel::appendLines(int firstIndex, const QList<Segment>& lines)
+{
+    if (firstIndex != m_segments.size() || lines.isEmpty())
+        return;
+    beginInsertRows({}, firstIndex, firstIndex + int(lines.size()) - 1);
+    m_segments += lines;
+    endInsertRows();
+}
+
+void SubtitleModel::setTranslations(int firstIndex, const QStringList& zh)
+{
+    int last = -1;
+    for (int k = 0; k < zh.size(); ++k) {
+        const int row = firstIndex + k;
+        if (row < 0 || row >= m_segments.size() || zh[k].isEmpty())
+            continue;
+        m_segments[row].zh = zh[k];
+        last = row;
+    }
+    if (last >= 0)
+        emit dataChanged(index(firstIndex, Chinese), index(last, Chinese));
+}
+
+void SubtitleModel::setEditable(bool editable)
+{
+    m_editable = editable;
+}
+
+void SubtitleModel::setCurrentRow(int row)
+{
+    if (row == m_current)
+        return;
+    const int old = m_current;
+    m_current = row;
+    for (int r : {old, row}) {
+        if (r >= 0 && r < m_segments.size())
+            emit dataChanged(index(r, 0), index(r, ColumnCount - 1), {Qt::FontRole});
+    }
+}
+
+int SubtitleModel::rowAt(double seconds) const
+{
+    // 行按开始时间递增：找最后一个 start <= seconds 的行，再看是否还没结束
+    auto it = std::upper_bound(m_segments.cbegin(), m_segments.cend(), seconds,
+                               [](double t, const Segment& s) { return t < s.start; });
+    if (it == m_segments.cbegin())
+        return -1;
+    --it;
+    return seconds <= it->end ? int(it - m_segments.cbegin()) : -1;
 }
 
 int SubtitleModel::untranslatedCount() const
@@ -58,7 +111,12 @@ QVariant SubtitleModel::data(const QModelIndex& index, int role) const
             return s.zh;
         }
     }
-    if (role == Qt::BackgroundRole && index.column() == Chinese && s.zh.trimmed().isEmpty())
+    if (role == Qt::FontRole && index.row() == m_current) {
+        QFont f;
+        f.setBold(true);
+        return f;
+    }
+    if (role == Qt::BackgroundRole && index.column() == Chinese && s.zh.trimmed().isEmpty() && m_editable)
         return QColor(255, 196, 0, 70); // 没翻出来的行，深浅色主题下都看得见
     if (role == Qt::ForegroundRole && index.column() == Time)
         return QGuiApplication::palette().color(QPalette::PlaceholderText);
@@ -102,7 +160,7 @@ QVariant SubtitleModel::headerData(int section, Qt::Orientation orientation, int
 Qt::ItemFlags SubtitleModel::flags(const QModelIndex& index) const
 {
     Qt::ItemFlags f = QAbstractTableModel::flags(index);
-    if (index.column() == Japanese || index.column() == Chinese)
+    if (m_editable && (index.column() == Japanese || index.column() == Chinese))
         f |= Qt::ItemIsEditable;
     return f;
 }

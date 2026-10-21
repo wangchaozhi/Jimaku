@@ -3,10 +3,9 @@
 #include "core/modelmanager.h"
 #include "core/settings.h"
 #include "droppage.h"
-#include "editorpage.h"
 #include "modeldownloaddialog.h"
-#include "progresspage.h"
 #include "settingsdialog.h"
+#include "workspacepage.h"
 
 #include <QCloseEvent>
 #include <QFileDialog>
@@ -42,12 +41,10 @@ MainWindow::MainWindow(QWidget* parent)
     resize(960, 640);
 
     m_drop = new DropPage(this);
-    m_progress = new ProgressPage(this);
-    m_editor = new EditorPage(this);
+    m_workspace = new WorkspacePage(this);
     m_pages = new QStackedWidget(this);
     m_pages->addWidget(m_drop);
-    m_pages->addWidget(m_progress);
-    m_pages->addWidget(m_editor);
+    m_pages->addWidget(m_workspace);
     setCentralWidget(m_pages);
 
     auto* file = menuBar()->addMenu(tr("文件"));
@@ -59,52 +56,52 @@ MainWindow::MainWindow(QWidget* parent)
 
     connect(m_drop, &DropPage::chooseFileRequested, this, &MainWindow::chooseFile);
     connect(m_drop, &DropPage::settingsRequested, this, &MainWindow::openSettings);
-    connect(m_editor, &EditorPage::settingsRequested, this, &MainWindow::openSettings);
-    connect(m_editor, &EditorPage::newVideoRequested, this, [this] { m_pages->setCurrentWidget(m_drop); });
-    connect(m_editor, &EditorPage::retranslateRequested, this, &MainWindow::retranslate);
-    connect(m_progress, &ProgressPage::cancelRequested, m_pipeline, &Pipeline::cancel);
-    connect(m_progress, &ProgressPage::backRequested, this, [this] { m_pages->setCurrentWidget(m_drop); });
+    connect(m_workspace, &WorkspacePage::settingsRequested, this, &MainWindow::openSettings);
+    connect(m_workspace, &WorkspacePage::newVideoRequested, this, &MainWindow::showDropPage);
+    connect(m_workspace, &WorkspacePage::retranslateRequested, this, &MainWindow::retranslate);
+    connect(m_workspace, &WorkspacePage::cancelRequested, m_pipeline, &Pipeline::cancel);
 
+    // 边处理边推送到工作台
     connect(m_pipeline, &Pipeline::stageChanged, this, [this](Pipeline::Stage s) {
         if (!m_retranslating)
-            m_progress->setStage(Pipeline::stageName(s));
+            m_workspace->setStage(Pipeline::stageName(s));
     });
-    connect(m_pipeline, &Pipeline::progressChanged, this, [this](double f) {
-        if (!m_retranslating)
-            m_progress->setProgress(f);
-    });
+    connect(m_pipeline, &Pipeline::linesAdded, m_workspace, &WorkspacePage::addLines);
+    connect(m_pipeline, &Pipeline::translated, m_workspace, &WorkspacePage::addTranslations);
+    connect(m_pipeline, &Pipeline::transcribedUntil, m_workspace, &WorkspacePage::setTranscribedUntil);
     connect(m_pipeline, &Pipeline::finished, this, [this](const PipelineResult& r) {
         if (m_retranslating) {
-            // 补译只改 zh：保留用户在编辑器里的修改
             m_retranslating = false;
-            PipelineResult merged = r;
-            merged.mediaDuration = 0;
-            m_editor->setResult(m_currentFile, merged);
+            m_workspace->setRetranslated(r);
             return;
         }
-        m_editor->setResult(m_currentFile, r);
-        m_pages->setCurrentWidget(m_editor);
+        m_workspace->finish(r);
     });
     connect(m_pipeline, &Pipeline::failed, this, [this](const TaskError& e) {
         m_retranslating = false;
-        m_progress->showError(e);
-        m_pages->setCurrentWidget(m_progress);
+        m_workspace->fail(e);
     });
     connect(m_pipeline, &Pipeline::canceled, this, [this] {
         if (m_retranslating) {
             m_retranslating = false;
-            m_editor->setRetranslating(false);
+            m_workspace->setRetranslating(false);
             return;
         }
-        m_pages->setCurrentWidget(m_drop);
+        showDropPage();
     });
+}
+
+void MainWindow::showDropPage()
+{
+    m_workspace->stopPlayback();
+    m_pages->setCurrentWidget(m_drop);
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (m_pages->currentWidget() != m_progress && !firstLocalFile(event->mimeData()).isEmpty()) {
+    if (!m_pipeline->isRunning() && !firstLocalFile(event->mimeData()).isEmpty()) {
         event->acceptProposedAction();
-        m_pages->setCurrentWidget(m_drop);
+        showDropPage();
         m_drop->setHighlighted(true);
     }
 }
@@ -184,8 +181,8 @@ void MainWindow::startFile(const QString& path)
     o.input = path;
     o.modelPath = ModelManager::modelPath(Settings::asrModel());
     o.translator = Settings::translatorConfig();
-    m_progress->showRunning(QFileInfo(path).fileName());
-    m_pages->setCurrentWidget(m_progress);
+    m_workspace->begin(path);
+    m_pages->setCurrentWidget(m_workspace);
     m_pipeline->start(o);
 }
 
@@ -194,8 +191,8 @@ void MainWindow::retranslate()
     if (m_pipeline->isRunning() || !ensureApiKey())
         return;
     m_retranslating = true;
-    m_editor->setRetranslating(true);
-    m_pipeline->retranslate(m_editor->segments(), Settings::translatorConfig());
+    m_workspace->setRetranslating(true);
+    m_pipeline->retranslate(m_workspace->segments(), Settings::translatorConfig());
 }
 
 void MainWindow::openSettings()

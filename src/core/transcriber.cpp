@@ -16,8 +16,45 @@ void quietLog(ggml_log_level level, const char* text, void*)
 
 struct Callbacks {
     const std::function<void(double)>* progress;
+    const std::function<void(const QList<Segment>&)>* onSegments;
     const std::atomic_bool* cancel;
+    QList<Segment>* out;
 };
+
+// 第 s 段 → Segment：把字节级 token 攒成完整 UTF-8 再作为一个词，时间取首尾 token。没有文字时返回 false
+bool extractSegment(whisper_context* ctx, int s, Segment* seg)
+{
+    const whisper_token eot = whisper_token_eot(ctx);
+    seg->start = whisper_full_get_segment_t0(ctx, s) / 100.0;
+    seg->end = whisper_full_get_segment_t1(ctx, s) / 100.0;
+    QByteArray pending;
+    double pendingStart = -1;
+    const int nTok = whisper_full_n_tokens(ctx, s);
+    for (int t = 0; t < nTok; ++t) {
+        if (whisper_full_get_token_id(ctx, s, t) >= eot) // [_BEG_]、时间戳等特殊 token
+            continue;
+        const double t0 = whisper_full_get_token_t0(ctx, s, t) / 100.0;
+        const double t1 = whisper_full_get_token_t1(ctx, s, t) / 100.0;
+        if (pending.isEmpty())
+            pendingStart = t0;
+        pending += whisper_full_get_token_text(ctx, s, t);
+        const int ok = completeUtf8Length(pending);
+        if (ok == 0)
+            continue;
+        Word w{pendingStart, qMax(t1, pendingStart), QString::fromUtf8(pending.left(ok))};
+        pending = pending.mid(ok);
+        pendingStart = t1;
+        if (!w.text.trimmed().isEmpty())
+            seg->words.append(w);
+    }
+    if (seg->words.isEmpty())
+        return false;
+    seg->ja = joinWords(seg->words);
+    // 词级时间比整段时间更贴近实际发声
+    seg->start = qMax(seg->start, seg->words.first().start);
+    seg->end = qMax(seg->start, qMin(seg->end, seg->words.last().end));
+    return true;
+}
 
 } // namespace
 
@@ -75,7 +112,7 @@ bool Transcriber::load(const QString& modelPath, QString* error)
 
 QList<Segment> Transcriber::transcribe(const std::vector<float>& pcm,
                                        const std::function<void(double)>& progress, const std::atomic_bool* cancel,
-                                       QString* error)
+                                       QString* error, const std::function<void(const QList<Segment>&)>& onSegments)
 {
     if (!m_ctx) {
         *error = QObject::tr("识别模型还没有加载");
@@ -94,7 +131,25 @@ QList<Segment> Transcriber::transcribe(const std::vector<float>& pcm,
     wp.print_special = false;
     wp.n_threads = qBound(1, QThread::idealThreadCount(), 8);
 
-    Callbacks cb{&progress, cancel};
+    QList<Segment> out;
+    Callbacks cb{&progress, &onSegments, cancel, &out};
+    // 每解码出几段就立即交出去，界面可以边识别边显示
+    wp.new_segment_callback = [](whisper_context* ctx, whisper_state*, int nNew, void* user) {
+        auto* c = static_cast<Callbacks*>(user);
+        const int n = whisper_full_n_segments(ctx);
+        QList<Segment> fresh;
+        for (int s = n - nNew; s < n; ++s) {
+            Segment seg;
+            if (extractSegment(ctx, s, &seg))
+                fresh.append(seg);
+        }
+        if (fresh.isEmpty())
+            return;
+        c->out->append(fresh);
+        if (*c->onSegments)
+            (*c->onSegments)(fresh);
+    };
+    wp.new_segment_callback_user_data = &cb;
     wp.progress_callback = [](whisper_context*, whisper_state*, int percent, void* user) {
         auto* c = static_cast<Callbacks*>(user);
         if (*c->progress)
@@ -115,43 +170,6 @@ QList<Segment> Transcriber::transcribe(const std::vector<float>& pcm,
         return {};
     }
 
-    const whisper_token eot = whisper_token_eot(m_ctx);
-    QList<Segment> out;
-    const int nSeg = whisper_full_n_segments(m_ctx);
-    for (int s = 0; s < nSeg; ++s) {
-        Segment seg;
-        seg.start = whisper_full_get_segment_t0(m_ctx, s) / 100.0;
-        seg.end = whisper_full_get_segment_t1(m_ctx, s) / 100.0;
-
-        // 把字节级 token 攒成完整 UTF-8 再作为一个词，时间取首尾 token
-        QByteArray pending;
-        double pendingStart = -1;
-        const int nTok = whisper_full_n_tokens(m_ctx, s);
-        for (int t = 0; t < nTok; ++t) {
-            if (whisper_full_get_token_id(m_ctx, s, t) >= eot) // [_BEG_]、时间戳等特殊 token
-                continue;
-            const double t0 = whisper_full_get_token_t0(m_ctx, s, t) / 100.0;
-            const double t1 = whisper_full_get_token_t1(m_ctx, s, t) / 100.0;
-            if (pending.isEmpty())
-                pendingStart = t0;
-            pending += whisper_full_get_token_text(m_ctx, s, t);
-            const int ok = completeUtf8Length(pending);
-            if (ok == 0)
-                continue;
-            Word w{pendingStart, qMax(t1, pendingStart), QString::fromUtf8(pending.left(ok))};
-            pending = pending.mid(ok);
-            pendingStart = t1;
-            if (!w.text.trimmed().isEmpty())
-                seg.words.append(w);
-        }
-        if (seg.words.isEmpty())
-            continue;
-        seg.ja = joinWords(seg.words);
-        // 词级时间比整段时间更贴近实际发声
-        seg.start = qMax(seg.start, seg.words.first().start);
-        seg.end = qMax(seg.start, qMin(seg.end, seg.words.last().end));
-        out.append(seg);
-    }
     if (progress)
         progress(1.0);
     return out;

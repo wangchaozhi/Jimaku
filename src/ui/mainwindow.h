@@ -5,15 +5,16 @@
 #include <QMainWindow>
 
 class DropPage;
-class EditorPage;
-class ProgressPage;
 class QStackedWidget;
+class WorkspacePage;
 
-// 三页：拖放 → 处理中 → 编辑/导出
+// 两页：拖放 → 工作台（边处理边预览、编辑、导出）
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* parent = nullptr);
+
+    void openFile(const QString& path) { startFile(path); }
 
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -28,12 +29,12 @@ private:
     bool ensureApiKey();
     void openSettings();
     void retranslate();
+    void showDropPage();
 
     Pipeline* m_pipeline;
     QStackedWidget* m_pages;
     DropPage* m_drop;
-    ProgressPage* m_progress;
-    EditorPage* m_editor;
+    WorkspacePage* m_workspace;
     QString m_currentFile;
     bool m_retranslating = false;
 };

@@ -30,6 +30,7 @@ jobs:
           host: mac
           target: desktop
           arch: clang_64
+          modules: qtmultimedia
           cache: true
 
       - name: Configure
@@ -79,6 +80,7 @@ jobs:
           # Qt 6.11.3 起 Windows 仓库按编译器拆分，aqtinstall 3.3.0 找不到；先固定到已支持的提交（同 SnapPin）
           aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7'
           arch: win64_msvc2022_64
+          modules: qtmultimedia
           cache: true
 
       - name: Configure

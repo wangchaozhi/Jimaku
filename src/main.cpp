@@ -2,6 +2,8 @@
 #include "ui/mainwindow.h"
 
 #include <QApplication>
+#include <QFileInfo>
+#include <QTimer>
 #include <cstring>
 
 int main(int argc, char** argv)
@@ -21,5 +23,9 @@ int main(int argc, char** argv)
     QApplication::setApplicationDisplayName(QStringLiteral("Jimaku"));
     MainWindow w;
     w.show();
+    // Jimaku 视频.mp4：启动后直接开始处理
+    const QStringList args = QApplication::arguments();
+    if (args.size() > 1 && QFileInfo(args.last()).isFile())
+        QTimer::singleShot(0, &w, [&w, path = args.last()] { w.openFile(QFileInfo(path).absoluteFilePath()); });
     return QApplication::exec();
 }

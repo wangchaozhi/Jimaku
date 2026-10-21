@@ -11,3 +11,17 @@ struct SegmenterOptions {
 };
 
 QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& options = {});
+
+// 边识别边断句：每收到 whisper 的几段原始分段就交出已经"定稿"的字幕行。
+// 最后一行先留着（下一段可能要和它合并），所以交出的行之后不会再变，序号稳定
+class IncrementalSegmenter {
+public:
+    explicit IncrementalSegmenter(const SegmenterOptions& options = {});
+
+    QList<Segment> feed(const QList<Segment>& raw);
+    QList<Segment> finish(); // 识别结束：交出留着的最后一行
+
+private:
+    SegmenterOptions m_options;
+    QList<Segment> m_pending; // 0 或 1 行
+};

@@ -26,6 +26,7 @@ struct PipelineResult {
     TaskError translateError; // 翻译整体失败（key 错、连不上）；识别结果仍然保留
     QString lastTranslateError;
     double mediaDuration = 0;
+    // translateSeconds：识别结束后还要等翻译多久（翻译和识别是同时进行的）
     double decodeSeconds = 0, loadSeconds = 0, transcribeSeconds = 0, translateSeconds = 0;
     bool modelReused = false; // 模型已经在内存里，没有重新加载
 };
@@ -51,6 +52,10 @@ public:
 signals:
     void stageChanged(Pipeline::Stage stage);
     void progressChanged(double fraction); // 整体进度 0..1
+    // 边处理边推送（工作线程发出）：新定稿的字幕行、某一批的译文、已识别到的时刻（秒）
+    void linesAdded(int firstIndex, const QList<Segment>& lines);
+    void translated(int firstIndex, const QStringList& zh);
+    void transcribedUntil(double seconds);
     void finished(const PipelineResult& result);
     void failed(const TaskError& error);
     void canceled();

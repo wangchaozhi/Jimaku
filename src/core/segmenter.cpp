@@ -183,3 +183,28 @@ QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& o)
     }
     return lines;
 }
+
+IncrementalSegmenter::IncrementalSegmenter(const SegmenterOptions& options)
+    : m_options(options)
+{
+}
+
+QList<Segment> IncrementalSegmenter::feed(const QList<Segment>& raw)
+{
+    if (raw.isEmpty())
+        return {};
+    // 留下的那一行当作一段原始分段放在最前面，和新来的一起重新断句
+    QList<Segment> lines = resegment(m_pending + raw, m_options);
+    m_pending.clear();
+    // 最后一行以句末标点结尾时不会再和后面合并，可以直接定稿
+    if (!lines.isEmpty() && !endsSentence(lines.last().ja))
+        m_pending.append(lines.takeLast());
+    return lines;
+}
+
+QList<Segment> IncrementalSegmenter::finish()
+{
+    QList<Segment> rest = m_pending;
+    m_pending.clear();
+    return rest;
+}

@@ -14,7 +14,7 @@ project(Jimaku VERSION ${JIMAKU_VERSION} LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.7 REQUIRED COMPONENTS Widgets Network)
+find_package(Qt6 6.7 REQUIRED COMPONENTS Widgets Network Multimedia MultimediaWidgets)
 qt_standard_project_setup()
 
 if(MSVC)
@@ -71,15 +71,16 @@ set(APP_SOURCES
     src/cli.h src/cli.cpp
     src/ui/mainwindow.h src/ui/mainwindow.cpp
     src/ui/droppage.h src/ui/droppage.cpp
-    src/ui/progresspage.h src/ui/progresspage.cpp
-    src/ui/editorpage.h src/ui/editorpage.cpp
+    src/ui/workspacepage.h src/ui/workspacepage.cpp
+    src/ui/videoview.h src/ui/videoview.cpp
+    src/ui/timeline.h src/ui/timeline.cpp
     src/ui/subtitlemodel.h src/ui/subtitlemodel.cpp
     src/ui/settingsdialog.h src/ui/settingsdialog.cpp
     src/ui/modeldownloaddialog.h src/ui/modeldownloaddialog.cpp)
 
 qt_add_executable(Jimaku WIN32 MACOSX_BUNDLE ${APP_SOURCES})
 target_compile_definitions(Jimaku PRIVATE APP_VERSION="${PROJECT_VERSION}")
-target_link_libraries(Jimaku PRIVATE Qt6::Widgets jimaku_core)
+target_link_libraries(Jimaku PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets jimaku_core)
 set_target_properties(Jimaku PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME Jimaku
     MACOSX_BUNDLE_GUI_IDENTIFIER io.github.wangchaozhi.jimaku

@@ -170,6 +170,41 @@ Translator::Result Translator::translateBatch(const QStringList& lines, const QS
     return Result::Retryable;
 }
 
+Translator::BatchOutcome Translator::translateLines(const QStringList& lines, const QStringList& before,
+                                                   const QStringList& after, const std::atomic_bool* cancel)
+{
+    BatchOutcome o;
+    o.zh = QStringList(lines.size(), QString());
+    QString err;
+    QStringList zh;
+    Result r = translateBatch(lines, before, after, &zh, &err, cancel);
+    if (r == Result::Ok)
+        o.zh = zh;
+    // 逐条补译：整批失败的行，以及模型返回空字符串的行；前后文从这一批及其上下文里取
+    const QStringList all = before + lines + after;
+    const int ctx = m_config.contextLines;
+    for (int k = 0; k < lines.size() && r != Result::Fatal && r != Result::Canceled; ++k) {
+        if (!o.zh[k].isEmpty())
+            continue;
+        const int i = int(before.size()) + k;
+        const int from = qMax(0, i - ctx);
+        QStringList one;
+        r = translateBatch({lines[k]}, all.mid(from, i - from), all.mid(i + 1, ctx), &one, &err, cancel);
+        if (r == Result::Ok && !one.first().isEmpty()) {
+            o.zh[k] = one.first();
+        } else {
+            if (r == Result::Ok)
+                err = tr("模型对“%1”返回了空译文").arg(lines[k]);
+            o.error = err;
+        }
+    }
+    o.fatal = r == Result::Fatal;
+    o.canceled = r == Result::Canceled;
+    if (o.fatal)
+        o.error = err;
+    return o;
+}
+
 TranslateOutcome Translator::translate(QList<Segment>* segments, const std::function<void(double)>& progress,
                                        const std::atomic_bool* cancel)
 {
@@ -208,35 +243,16 @@ TranslateOutcome Translator::translate(QList<Segment>* segments, const std::func
         QStringList lines;
         for (int i : batch)
             lines << (*segments)[i].ja;
-        QStringList zh;
-        QString err;
-        Result r = translateBatch(lines, context(batch.first() - m_config.contextLines, batch.first()),
-                                  context(batch.last() + 1, batch.last() + 1 + m_config.contextLines), &zh, &err, cancel);
-        if (r == Result::Retryable)
-            zh = QStringList(batch.size(), QString()); // 整批不行：下面逐条兜底
-        // 逐条补译整批失败的行，以及模型返回空字符串的行
-        for (int k = 0; r != Result::Fatal && r != Result::Canceled && k < batch.size(); ++k) {
-            if (!zh[k].isEmpty())
-                continue;
-            const int i = batch[k];
-            QStringList one;
-            r = translateBatch({(*segments)[i].ja}, context(i - m_config.contextLines, i),
-                               context(i + 1, i + 1 + m_config.contextLines), &one, &err, cancel);
-            if (r == Result::Ok && !one.first().isEmpty()) {
-                zh[k] = one.first();
-            } else if (r == Result::Ok) {
-                err = tr("模型对“%1”返回了空译文").arg((*segments)[i].ja);
-                r = Result::Retryable;
-            }
-        }
+        const BatchOutcome b = translateLines(lines, context(batch.first() - m_config.contextLines, batch.first()),
+                                              context(batch.last() + 1, batch.last() + 1 + m_config.contextLines), cancel);
         QMutexLocker lock(&mutex);
-        results[bi] = zh;
-        if (r == Result::Fatal && !outcome.fatal.isError()) {
+        results[bi] = b.zh;
+        if (b.fatal && !outcome.fatal.isError()) {
             stopped = true;
-            outcome.fatal = classifyError(err);
+            outcome.fatal = classifyError(b.error);
         }
-        if (r != Result::Ok && !err.isEmpty())
-            outcome.lastError = err;
+        if (!b.error.isEmpty())
+            outcome.lastError = b.error;
         done += int(batch.size());
         if (progress)
             progress(double(done) / todo.size());

@@ -3,6 +3,9 @@
 #include "mediadecoder.h"
 
 #include <QElapsedTimer>
+#include <QHash>
+#include <QMutex>
+#include <QThreadPool>
 
 Pipeline::Pipeline(QObject* parent)
     : QObject(parent)
@@ -116,38 +119,107 @@ void Pipeline::runAll(const PipelineOptions& o)
     }
     result.loadSeconds = timer.restart() / 1000.0;
 
-    // 3. 识别 + 断句
+    // 3. 识别 + 断句 + 翻译同时进行：whisper 每出几段就断句定稿，攒够一批就交给线程池翻译
     enter(Transcribing);
-    const QList<Segment> raw = m_transcriber->transcribe(pcm, [&](double p) { report(Transcribing, p); }, &m_cancel, &error);
+    IncrementalSegmenter segmenter(o.segmenter);
+    Translator translator(o.translator);
+    const int batch = qMin(10, o.translator.batchSize); // 小批：字幕更快出现译文
+    const int ctx = o.translator.contextLines;
+    QList<Segment>& lines = result.segments; // 只在本线程追加；翻译任务拿的是拷贝
+    int submitted = 0;
+    QThreadPool pool;
+    pool.setMaxThreadCount(qMax(1, o.translator.parallel));
+    QMutex mutex; // 保护 zh 结果和错误信息
+    QHash<int, QString> zh;
+    std::atomic_bool stopped{false};
+    std::atomic_int translatedCount{0};
+
+    auto text = [&](int from, int to) {
+        QStringList out;
+        for (int i = qMax(0, from); i < qMin(int(lines.size()), to); ++i)
+            out << lines[i].ja;
+        return out;
+    };
+    // 后文也要齐了才提交（识别结束时把剩下的全部提交）
+    auto submit = [&](bool final) {
+        if (!o.translate)
+            return;
+        while (submitted < lines.size() && (final || submitted + batch + ctx <= lines.size())) {
+            const int first = submitted;
+            const int last = qMin(int(lines.size()), first + batch);
+            submitted = last;
+            const QStringList src = text(first, last), before = text(first - ctx, first), after = text(last, last + ctx);
+            pool.start([&, first, src, before, after] {
+                if (stopped || m_cancel)
+                    return;
+                const Translator::BatchOutcome b = translator.translateLines(src, before, after, &m_cancel);
+                {
+                    QMutexLocker lock(&mutex);
+                    for (int k = 0; k < b.zh.size(); ++k)
+                        zh.insert(first + k, b.zh[k]);
+                    if (b.fatal && !result.translateError.isError()) {
+                        stopped = true;
+                        result.translateError = classifyError(b.error);
+                    }
+                    if (!b.error.isEmpty())
+                        result.lastTranslateError = b.error;
+                }
+                translatedCount += int(src.size());
+                emit translated(first, b.zh);
+            });
+        }
+    };
+    auto add = [&](const QList<Segment>& fresh) {
+        if (fresh.isEmpty())
+            return;
+        const int first = int(lines.size());
+        lines += fresh;
+        emit linesAdded(first, fresh);
+        submit(false);
+    };
+
+    const QList<Segment> raw = m_transcriber->transcribe(
+        pcm, [&](double p) { report(Transcribing, p); }, &m_cancel, &error,
+        [&](const QList<Segment>& fresh) {
+            add(segmenter.feed(fresh));
+            emit transcribedUntil(fresh.last().end);
+        });
     if (m_cancel) {
+        pool.waitForDone();
         emit canceled();
         return;
     }
     if (raw.isEmpty()) {
+        pool.waitForDone();
         emit failed(error.isEmpty() ? makeError(TaskError::Input, tr("没有识别到日语语音")) : classifyError(error));
         return;
     }
+    add(segmenter.finish());
+    emit transcribedUntil(result.mediaDuration);
     pcm.clear();
     pcm.shrink_to_fit();
     result.rawSegments = int(raw.size());
-    result.segments = resegment(raw, o.segmenter);
     result.transcribeSeconds = timer.restart() / 1000.0;
 
-    // 4. 翻译：失败不丢弃识别结果，交给界面提示和重试
+    // 4. 等剩下的翻译完成：失败不丢弃识别结果，交给界面提示和重试
     if (o.translate) {
         enter(Translating);
-        Translator translator(o.translator);
-        const TranslateOutcome t = translator.translate(&result.segments, [&](double p) { report(Translating, p); }, &m_cancel);
+        submit(true);
+        while (!pool.waitForDone(200)) {
+            if (!lines.isEmpty())
+                report(Translating, double(translatedCount) / lines.size());
+        }
         if (m_cancel) {
             emit canceled();
             return;
         }
-        result.untranslated = t.failed;
-        result.translateError = t.fatal;
-        result.lastTranslateError = t.lastError;
+        for (auto it = zh.cbegin(); it != zh.cend(); ++it)
+            lines[it.key()].zh = it.value();
+        for (const Segment& s : lines)
+            result.untranslated += s.zh.trimmed().isEmpty() ? 1 : 0;
         result.translateSeconds = timer.restart() / 1000.0;
     } else {
-        result.untranslated = int(result.segments.size());
+        result.untranslated = int(lines.size());
     }
     emit progressChanged(1.0);
     emit finished(result);

@@ -26,10 +26,11 @@ public:
     QString modelPath() const { return m_modelPath; }
 
     // 不用 VAD：实测切块后丢失上下文，识别反而更差、还会出现幻觉。
-    // 返回 whisper 的原始分段，每段带词级时间戳；失败返回空并写 error（取消时 error 为空）
+    // 返回 whisper 的原始分段，每段带词级时间戳；失败返回空并写 error（取消时 error 为空）。
+    // onSegments 在识别过程中（工作线程里）每出几段调用一次，用于边识别边显示
     QList<Segment> transcribe(const std::vector<float>& pcm,
                               const std::function<void(double)>& progress, const std::atomic_bool* cancel,
-                              QString* error);
+                              QString* error, const std::function<void(const QList<Segment>&)>& onSegments = {});
 
 private:
     whisper_context* m_ctx = nullptr;

@@ -17,7 +17,7 @@ struct TranslatorConfig {
     QString apiKey;    // Ollama 可为空
     QString model;
     QList<QPair<QString, QString>> glossary; // 日文 → 中文，要求译文必须使用
-    int batchSize = 20;
+    int batchSize = 20;   // 边识别边翻译时用更小的批（见 Pipeline）
     int contextLines = 3; // 每批前后各附几句原文帮助理解（不翻译）
     int parallel = 4;     // 同时进行的请求数
     int maxRetries = 3;
@@ -38,6 +38,16 @@ public:
     // 只翻译 zh 为空的行；progress 参数 0..1
     TranslateOutcome translate(QList<Segment>* segments, const std::function<void(double)>& progress,
                                const std::atomic_bool* cancel);
+
+    // 翻译一批（失败或返回空译文的行逐条兜底）。zh 与 lines 等长，没翻出来的位置为空。线程安全
+    struct BatchOutcome {
+        QStringList zh;
+        bool fatal = false;    // key 错、连不上：不要再发后续请求
+        bool canceled = false;
+        QString error;         // 最后一个错误（有行没翻出来时非空）
+    };
+    BatchOutcome translateLines(const QStringList& lines, const QStringList& before, const QStringList& after,
+                                const std::atomic_bool* cancel);
 
     // 解析模型回复：{"t":[...]}，或直接是字符串数组；容忍 ``` 代码块和前后多余文字。
     // 条数不等于 expected 时返回空

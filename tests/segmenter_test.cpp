@@ -111,6 +111,30 @@ int main()
         check("timeline monotonic", monotonic(lines));
     }
 
+    // 增量断句：逐段喂入，与一次性断句的文字一致，时间轴单调
+    {
+        const QList<Segment> raw = {
+            rawSegment({QStringLiteral("今日は"), QStringLiteral("晴れ。")}, 0.0, 0.4),
+            rawSegment({QStringLiteral("メンバー全員が"), QStringLiteral("日本人の、"), QStringLiteral("7人組"), QStringLiteral("ガールズグループ")}, 2.0, 0.5),
+            rawSegment({QStringLiteral("XG")}, 4.1, 0.3),
+            rawSegment({QStringLiteral("そうですね")}, 6.0, 0.5),
+            rawSegment({QStringLiteral("はい")}, 6.8, 0.2),
+        };
+        IncrementalSegmenter inc;
+        QList<Segment> got;
+        for (const Segment& r : raw)
+            got += inc.feed({r});
+        got += inc.finish();
+        const QList<Segment> want = resegment(raw);
+        QStringList a, b;
+        for (const Segment& s : got)
+            a << s.ja;
+        for (const Segment& s : want)
+            b << s.ja;
+        expectEq("incremental matches batch", a.join(QLatin1Char('|')), b.join(QLatin1Char('|')));
+        check("incremental timeline monotonic", monotonic(got));
+    }
+
     std::printf("%d failure(s)\n", g_failures);
     return g_failures;
 }

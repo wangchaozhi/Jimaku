@@ -13,6 +13,14 @@ public:
     using QAbstractTableModel::QAbstractTableModel;
 
     void setSegments(const QList<Segment>& segments);
+    // 边处理边更新
+    void appendLines(int firstIndex, const QList<Segment>& lines);
+    void setTranslations(int firstIndex, const QStringList& zh); // 空字符串不覆盖
+    void setEditable(bool editable);
+    void setCurrentRow(int row); // 正在播放的行加粗
+    int currentRow() const { return m_current; }
+    // 覆盖 seconds 的行；没有返回 -1
+    int rowAt(double seconds) const;
     const QList<Segment>& segments() const { return m_segments; }
     int untranslatedCount() const;
 
@@ -25,4 +33,6 @@ public:
 
 private:
     QList<Segment> m_segments;
+    bool m_editable = true;
+    int m_current = -1;
 };
