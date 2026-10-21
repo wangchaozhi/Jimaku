@@ -22,6 +22,8 @@
 #include <QStyle>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QVideoFrame>
+#include <QVideoSink>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
@@ -93,16 +95,25 @@ WorkspacePage::WorkspacePage(QWidget* parent)
     m_time = new QLabel(clock(0) + QStringLiteral(" / ") + clock(0), this);
     m_time->setForegroundRole(QPalette::PlaceholderText);
     auto toggle = [this] {
-        if (m_player->playbackState() == QMediaPlayer::PlayingState)
+        if (m_player->playbackState() == QMediaPlayer::PlayingState && !m_previewing) {
             m_player->pause();
-        else
+        } else { // 包括"暂停时跳转正在静音出画面"的过程中按了播放：直接转为正常播放
+            m_previewing = false;
+            m_audio->setMuted(false);
             m_player->play();
+        }
     };
     connect(m_play, &QPushButton::clicked, this, toggle);
     connect(m_view, &VideoView::clicked, this, toggle);
     connect(m_timeline, &Timeline::seekRequested, this, &WorkspacePage::seekTo);
     connect(m_player, &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState s) {
-        m_play->setIcon(style()->standardIcon(s == QMediaPlayer::PlayingState ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
+        const bool playing = s == QMediaPlayer::PlayingState && !m_previewing;
+        m_play->setIcon(style()->standardIcon(playing ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
+    });
+    // 暂停时跳转的新画面到了：停下来
+    connect(m_view->videoItem()->videoSink(), &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame& frame) {
+        if (m_previewing && std::llabs(frame.startTime() / 1000 - m_previewTarget) < 2000)
+            endPreview();
     });
     connect(m_player, &QMediaPlayer::durationChanged, this, [this](qint64 ms) {
         m_timeline->setDuration(ms);
@@ -115,14 +126,10 @@ WorkspacePage::WorkspacePage(QWidget* parent)
         m_time->setText(clock(ms / 1000.0) + QStringLiteral(" / ") + clock(m_duration));
         refreshOverlay();
     });
-    // macOS 在开始播放前不出画面：加载完成后静音播一下再暂停，先把第一帧显示出来
+    // macOS 在开始播放前不出画面：加载完成后先把第一帧显示出来
     connect(m_player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus st) {
-        if (st != QMediaPlayer::LoadedMedia || m_player->playbackState() != QMediaPlayer::StoppedState)
-            return;
-        m_audio->setMuted(true);
-        m_player->play();
-        m_player->pause();
-        m_audio->setMuted(false);
+        if (st == QMediaPlayer::LoadedMedia && m_player->playbackState() == QMediaPlayer::StoppedState)
+            showFrameAt(0);
     });
     connect(m_player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString&) {
         m_view->setSubtitle(QString(), QString(), tr("这个格式无法预览，字幕仍会照常生成"));
@@ -239,9 +246,33 @@ bool WorkspacePage::covered(double seconds) const
                        [seconds](const TimeRange& r) { return seconds >= r.first && seconds < r.second; });
 }
 
+void WorkspacePage::showFrameAt(qint64 ms)
+{
+    // macOS（AVFoundation）暂停状态下跳转不会出新画面：静音播放，收到目标位置的画面后立即暂停
+    m_previewing = true;
+    m_previewTarget = ms;
+    m_audio->setMuted(true);
+    m_player->play();
+    const int serial = ++m_previewSerial;
+    QTimer::singleShot(1500, this, [this, serial] { // 一直没有画面（如纯音频文件）也要停下来
+        if (m_previewing && serial == m_previewSerial)
+            endPreview();
+    });
+}
+
+void WorkspacePage::endPreview()
+{
+    m_previewing = false;
+    m_player->pause();
+    m_audio->setMuted(false);
+}
+
 void WorkspacePage::seekTo(qint64 ms)
 {
+    const bool paused = m_player->playbackState() != QMediaPlayer::PlayingState || m_previewing;
     m_player->setPosition(ms);
+    if (paused)
+        showFrameAt(ms);
     if (m_processing && !covered(ms / 1000.0))
         emit priorityRequested(ms / 1000.0);
 }

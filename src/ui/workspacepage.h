@@ -55,6 +55,8 @@ private:
     void updateBanner();
     void exportSubtitles();
     void seekTo(qint64 ms); // 用户跳转：没识别到的地方请求优先处理
+    void showFrameAt(qint64 ms); // 暂停状态下显示指定位置的画面
+    void endPreview();
     bool covered(double seconds) const;
     void scheduleSave();
     void saveProject();
@@ -69,6 +71,9 @@ private:
     QTimer m_saveTimer;          // 改动后 2 秒保存一次进度
     QElapsedTimer m_etaClock;    // 估算剩余时间：本次开始后识别了多少秒
     double m_etaBase = -1;
+    bool m_previewing = false;   // 暂停时跳转：正在静音播放等新画面
+    qint64 m_previewTarget = 0;
+    int m_previewSerial = 0;
     int m_translated = 0;      // 已拿到译文结果的行数（含失败）
     QString m_stage;
     TaskError m_failure;       // 识别阶段的失败
