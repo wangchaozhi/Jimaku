@@ -51,7 +51,7 @@ $OPENSSL pkcs12 -in "$WORK/all.p12" -passin env:EXPORT_PASS -nodes -out "$WORK/a
 IDENTITY="$IDENTITY" WORK="$WORK" python3 - << 'EOF'
 import os, re
 work, name = os.environ["WORK"], os.environ["IDENTITY"]
-text = open(f"{work}/all.pem").read()
+text = open(f"{work}/all.pem", encoding="latin-1").read()  # 其他证书的名字可能不是 UTF-8：按字节原样读写
 blocks = re.findall(r"Bag Attributes(.*?)(-----BEGIN ([A-Z ]+)-----.*?-----END \3-----)", text, re.S)
 def attr(head, key):
     m = re.search(key + r":\s*(.+)", head)
@@ -63,8 +63,8 @@ kid = attr(cert[0], "localKeyID")
 key = next((b for b in blocks if "PRIVATE KEY" in b[2] and attr(b[0], "localKeyID") == kid), None)
 if not key:
     raise SystemExit(f"找不到 {name} 的私钥")
-open(f"{work}/cert.pem", "w").write(cert[1] + "\n")
-open(f"{work}/key.pem", "w").write(key[1] + "\n")
+open(f"{work}/cert.pem", "w", encoding="latin-1").write(cert[1] + "\n")
+open(f"{work}/key.pem", "w", encoding="latin-1").write(key[1] + "\n")
 EOF
 
 # 3. 重新打包成只含这一个身份的 p12（新的随机密码）并检查能否读回
