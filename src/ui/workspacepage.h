@@ -26,6 +26,7 @@ public:
     void addLines(int firstIndex, const QList<Segment>& lines);
     void addTranslations(int firstIndex, const QStringList& zh);
     void setTranscribedUntil(double seconds);
+    void updateSegments(const QList<Segment>& segments); // 校对后的整表
     void finish(const PipelineResult& result);
     void fail(const TaskError& error);
     // "重试翻译"的结果：整表替换
@@ -58,6 +59,7 @@ private:
     TaskError m_failure;       // 识别阶段的失败
     TaskError m_translateError;
     QString m_lastTranslateError;
+    QString m_summary; // 完成后的统计（术语、纠错、用量），显示在顶栏
 
     QLabel* m_title;
     QLabel* m_status;

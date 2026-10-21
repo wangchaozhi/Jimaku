@@ -15,6 +15,7 @@ struct PipelineOptions {
     QString input;
     QString modelPath;
     bool translate = true;
+    bool review = true; // 翻译完成后全片校对：统一专有名词、纠正识别错误
     TranslatorConfig translator;
     SegmenterOptions segmenter;
 };
@@ -25,9 +26,11 @@ struct PipelineResult {
     int untranslated = 0;    // 没有译文的行数；> 0 时界面必须提示
     TaskError translateError; // 翻译整体失败（key 错、连不上）；识别结果仍然保留
     QString lastTranslateError;
+    ReviewOutcome review;
+    TranslateUsage usage;
     double mediaDuration = 0;
     // translateSeconds：识别结束后还要等翻译多久（翻译和识别是同时进行的）
-    double decodeSeconds = 0, loadSeconds = 0, transcribeSeconds = 0, translateSeconds = 0;
+    double decodeSeconds = 0, loadSeconds = 0, transcribeSeconds = 0, translateSeconds = 0, reviewSeconds = 0;
     bool modelReused = false; // 模型已经在内存里，没有重新加载
 };
 
@@ -35,7 +38,7 @@ struct PipelineResult {
 class Pipeline : public QObject {
     Q_OBJECT
 public:
-    enum Stage { Decoding, LoadingModel, Transcribing, Translating };
+    enum Stage { Decoding, LoadingModel, Transcribing, Translating, Reviewing };
     Q_ENUM(Stage)
 
     explicit Pipeline(QObject* parent = nullptr);
@@ -56,6 +59,7 @@ signals:
     void linesAdded(int firstIndex, const QList<Segment>& lines);
     void translated(int firstIndex, const QStringList& zh);
     void transcribedUntil(double seconds);
+    void segmentsUpdated(const QList<Segment>& segments); // 校对后整表更新（行数不变）
     void finished(const PipelineResult& result);
     void failed(const TaskError& error);
     void canceled();

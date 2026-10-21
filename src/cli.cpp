@@ -55,6 +55,8 @@ int runCli(int argc, char** argv)
     p.addOption({QStringLiteral("layout"), QStringLiteral("both / zh / ja"), QStringLiteral("layout"), QStringLiteral("both")});
     p.addOption({QStringLiteral("model"), QStringLiteral("识别模型：large-v3-turbo / medium / small"), QStringLiteral("id")});
     p.addOption({QStringLiteral("no-translate"), QStringLiteral("只识别，不翻译")});
+    p.addOption({QStringLiteral("no-review"), QStringLiteral("翻译后不做全片校对（统一人名、纠正识别错误）")});
+    p.addOption({QStringLiteral("no-cache"), QStringLiteral("不使用翻译缓存")});
     p.addPositionalArgument(QStringLiteral("video"), QStringLiteral("视频或音频文件"));
     p.process(app);
 
@@ -73,6 +75,9 @@ int runCli(int argc, char** argv)
     o.translate = !p.isSet(QStringLiteral("no-translate"));
     if (o.translate) {
         o.translator = Settings::translatorConfig();
+        o.review = Settings::reviewEnabled() && !p.isSet(QStringLiteral("no-review"));
+        if (p.isSet(QStringLiteral("no-cache")))
+            o.translator.cacheDir.clear();
         if (o.translator.apiKey.isEmpty() && Settings::provider(Settings::providerId()).needsKey) {
             err(QCoreApplication::translate("cli", "没有 %1 的 API key：在程序设置里填写，或设置环境变量 JIMAKU_API_KEY")
                     .arg(Settings::provider(Settings::providerId()).label));
@@ -118,12 +123,24 @@ int runCli(int argc, char** argv)
             {QStringLiteral("longest_line_seconds"), longest},
             {QStringLiteral("untranslated"), r.untranslated},
             {QStringLiteral("translate_error"), r.translateError.isError() ? r.translateError.message : r.lastTranslateError},
+            {QStringLiteral("review"), QJsonObject{{QStringLiteral("summary"), r.review.summary},
+                                                    {QStringLiteral("terms"), int(r.review.terms.size())},
+                                                    {QStringLiteral("ja_fixed"), r.review.jaFixed},
+                                                    {QStringLiteral("zh_fixed"), r.review.zhFixed},
+                                                    {QStringLiteral("error"), r.review.error}}},
+            {QStringLiteral("usage"), QJsonObject{{QStringLiteral("prompt_tokens"), r.usage.promptTokens},
+                                                   {QStringLiteral("completion_tokens"), r.usage.completionTokens},
+                                                   {QStringLiteral("requests"), r.usage.requests},
+                                                   {QStringLiteral("cache_hits"), r.usage.cacheHits}}},
             {QStringLiteral("seconds"), QJsonObject{{QStringLiteral("decode"), r.decodeSeconds},
                                                      {QStringLiteral("load_model"), r.loadSeconds},
                                                      {QStringLiteral("transcribe"), r.transcribeSeconds},
-                                                     {QStringLiteral("translate"), r.translateSeconds}}},
+                                                     {QStringLiteral("translate"), r.translateSeconds},
+                                                     {QStringLiteral("review"), r.reviewSeconds}}},
         };
         std::printf("%s\n", QJsonDocument(stats).toJson(QJsonDocument::Indented).constData());
+        for (const auto& [ja, zh] : r.review.terms)
+            err(QStringLiteral("术语：%1 → %2").arg(ja, zh));
         if (r.translateError.isError())
             err(QStringLiteral("翻译失败：%1\n提示：%2").arg(r.translateError.message, r.translateError.hint));
         else if (o.translate && r.untranslated > 0)

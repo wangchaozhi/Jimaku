@@ -35,6 +35,14 @@ void setOutputFormat(SubtitleWriter::Format format);
 SubtitleWriter::Layout layout();
 void setLayout(SubtitleWriter::Layout layout);
 
+// 翻译风格
+bool subtitleStyle();   // 句末不加标点、逗号换空格、译文尽量短（默认开）
+void setSubtitleStyle(bool on);
+bool translateLyrics(); // 英文歌词、口号也翻译（默认保留原文）
+void setTranslateLyrics(bool on);
+bool reviewEnabled();   // 翻译后全片校对：统一专有名词、纠正识别错误（默认开）
+void setReviewEnabled(bool on);
+
 // 每行 "日文=中文"
 QString glossaryText();
 void setGlossaryText(const QString& text);

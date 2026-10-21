@@ -5,6 +5,7 @@
 #include <QEventLoop>
 #include <QObject>
 #include <QSettings>
+#include <QStandardPaths>
 #include <qtkeychain/keychain.h>
 
 namespace Settings {
@@ -111,6 +112,36 @@ void setLayout(SubtitleWriter::Layout layout)
     QSettings().setValue(QStringLiteral("output/layout"), QLatin1String(v));
 }
 
+bool subtitleStyle()
+{
+    return QSettings().value(QStringLiteral("translate/subtitleStyle"), true).toBool();
+}
+
+void setSubtitleStyle(bool on)
+{
+    QSettings().setValue(QStringLiteral("translate/subtitleStyle"), on);
+}
+
+bool translateLyrics()
+{
+    return QSettings().value(QStringLiteral("translate/lyrics"), false).toBool();
+}
+
+void setTranslateLyrics(bool on)
+{
+    QSettings().setValue(QStringLiteral("translate/lyrics"), on);
+}
+
+bool reviewEnabled()
+{
+    return QSettings().value(QStringLiteral("translate/review"), true).toBool();
+}
+
+void setReviewEnabled(bool on)
+{
+    QSettings().setValue(QStringLiteral("translate/review"), on);
+}
+
 QString glossaryText()
 {
     return QSettings().value(QStringLiteral("translate/glossary")).toString();
@@ -187,6 +218,9 @@ TranslatorConfig translatorConfig()
     c.model = modelName();
     c.apiKey = apiKey(providerId());
     c.glossary = parseGlossary(glossaryText());
+    c.subtitleStyle = subtitleStyle();
+    c.translateLyrics = translateLyrics();
+    c.cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/translate");
     return c;
 }
 

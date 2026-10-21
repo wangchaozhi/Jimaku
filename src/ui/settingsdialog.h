@@ -2,6 +2,7 @@
 
 #include <QDialog>
 
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -32,5 +33,8 @@ private:
     QComboBox* m_format;
     QComboBox* m_layout;
     QPlainTextEdit* m_glossary;
+    QCheckBox* m_style;
+    QCheckBox* m_lyrics;
+    QCheckBox* m_review;
     QString m_loadedProvider;
 };

@@ -4,6 +4,7 @@
 #include "core/settings.h"
 #include "modeldownloaddialog.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -45,6 +46,13 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     m_glossary->setPlaceholderText(tr("每行一条：日文=中文\n例如：ジュリン=JURIN"));
     m_glossary->setFixedHeight(80);
 
+    m_style = new QCheckBox(tr("字幕风格：句末不加标点，逗号换成空格，译文尽量短"), this);
+    m_style->setChecked(Settings::subtitleStyle());
+    m_lyrics = new QCheckBox(tr("英文歌词、口号也翻译成中文（默认保留原文）"), this);
+    m_lyrics->setChecked(Settings::translateLyrics());
+    m_review = new QCheckBox(tr("翻译后全片校对：统一人名等专有名词、纠正识别错误（多 1～2 次请求）"), this);
+    m_review->setChecked(Settings::reviewEnabled());
+
     auto* translateBox = new QGroupBox(tr("翻译"), this);
     auto* tf = new QFormLayout(translateBox);
     tf->addRow(tr("服务"), m_provider);
@@ -53,6 +61,9 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     tf->addRow(tr("API key"), keyRow);
     tf->addRow(QString(), m_keyStatus);
     tf->addRow(tr("术语表"), m_glossary);
+    tf->addRow(QString(), m_style);
+    tf->addRow(QString(), m_lyrics);
+    tf->addRow(QString(), m_review);
 
     // 识别
     m_asrModel = new QComboBox(this);
@@ -157,6 +168,9 @@ void SettingsDialog::accept()
         }
     }
     Settings::setGlossaryText(m_glossary->toPlainText());
+    Settings::setSubtitleStyle(m_style->isChecked());
+    Settings::setTranslateLyrics(m_lyrics->isChecked());
+    Settings::setReviewEnabled(m_review->isChecked());
     Settings::setAsrModel(m_asrModel->currentData().toString());
     Settings::setOutputFormat(SubtitleWriter::Format(m_format->currentData().toInt()));
     Settings::setLayout(SubtitleWriter::Layout(m_layout->currentData().toInt()));

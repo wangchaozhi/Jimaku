@@ -50,6 +50,17 @@ void SubtitleModel::setTranslations(int firstIndex, const QStringList& zh)
         emit dataChanged(index(firstIndex, Chinese), index(last, Chinese));
 }
 
+void SubtitleModel::replaceSegments(const QList<Segment>& segments)
+{
+    if (segments.size() != m_segments.size()) {
+        setSegments(segments);
+        return;
+    }
+    m_segments = segments;
+    if (!m_segments.isEmpty())
+        emit dataChanged(index(0, 0), index(int(m_segments.size()) - 1, ColumnCount - 1));
+}
+
 void SubtitleModel::setEditable(bool editable)
 {
     m_editable = editable;
@@ -118,6 +129,15 @@ QVariant SubtitleModel::data(const QModelIndex& index, int role) const
     }
     if (role == Qt::BackgroundRole && index.column() == Chinese && s.zh.trimmed().isEmpty() && m_editable)
         return QColor(255, 196, 0, 70); // 没翻出来的行，深浅色主题下都看得见
+    // 校对时改过的日文：浅蓝底，悬停显示语音识别的原文
+    if (role == Qt::BackgroundRole && index.column() == Japanese && !s.jaOriginal.isEmpty())
+        return QColor(80, 160, 255, 50);
+    if (role == Qt::ToolTipRole && index.column() == Japanese && !s.jaOriginal.isEmpty())
+        return tr("已按上下文纠正识别错误\n识别原文：%1").arg(s.jaOriginal);
+    if (role == Qt::BackgroundRole && index.column() == Chinese && !s.zhOriginal.isEmpty() && !s.zh.trimmed().isEmpty())
+        return QColor(80, 160, 255, 50);
+    if (role == Qt::ToolTipRole && index.column() == Chinese && !s.zhOriginal.isEmpty())
+        return tr("全片校对改过这一行\n校对前：%1").arg(s.zhOriginal);
     if (role == Qt::ForegroundRole && index.column() == Time)
         return QGuiApplication::palette().color(QPalette::PlaceholderText);
     if (role == Qt::ToolTipRole && index.column() == Time)

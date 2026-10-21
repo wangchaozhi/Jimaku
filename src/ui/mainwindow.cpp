@@ -69,6 +69,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_pipeline, &Pipeline::linesAdded, m_workspace, &WorkspacePage::addLines);
     connect(m_pipeline, &Pipeline::translated, m_workspace, &WorkspacePage::addTranslations);
     connect(m_pipeline, &Pipeline::transcribedUntil, m_workspace, &WorkspacePage::setTranscribedUntil);
+    connect(m_pipeline, &Pipeline::segmentsUpdated, m_workspace, &WorkspacePage::updateSegments);
     connect(m_pipeline, &Pipeline::finished, this, [this](const PipelineResult& r) {
         if (m_retranslating) {
             m_retranslating = false;
@@ -181,6 +182,7 @@ void MainWindow::startFile(const QString& path)
     o.input = path;
     o.modelPath = ModelManager::modelPath(Settings::asrModel());
     o.translator = Settings::translatorConfig();
+    o.review = Settings::reviewEnabled();
     m_workspace->begin(path);
     m_pages->setCurrentWidget(m_workspace);
     m_pipeline->start(o);

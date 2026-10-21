@@ -191,6 +191,8 @@ void WorkspacePage::begin(const QString& videoPath)
     m_transcribed = 0;
     m_translated = 0;
     m_stage.clear();
+    m_summary.clear();
+    m_status->setToolTip(QString());
     m_failure = {};
     m_translateError = {};
     m_lastTranslateError.clear();
@@ -250,21 +252,38 @@ void WorkspacePage::setTranscribedUntil(double seconds)
     refreshOverlay();
 }
 
+void WorkspacePage::updateSegments(const QList<Segment>& segments)
+{
+    m_model->replaceSegments(segments);
+    refreshOverlay();
+}
+
 void WorkspacePage::finish(const PipelineResult& r)
 {
     if (r.mediaDuration > 0)
         m_duration = qMax(m_duration, r.mediaDuration);
     m_translateError = r.translateError;
     m_lastTranslateError = r.lastTranslateError;
-    // 最终结果与逐行推送的内容一致时只补译文，不重置表格（保留滚动位置和当前行）
-    if (r.segments.size() == m_model->rowCount()) {
-        QStringList zh;
-        for (const Segment& s : r.segments)
-            zh << s.zh;
-        m_model->setTranslations(0, zh);
-    } else {
-        m_model->setSegments(r.segments);
-    }
+    // 行数不变时原地刷新，不重置表格（保留滚动位置和当前行）
+    m_model->replaceSegments(r.segments);
+
+    QStringList parts;
+    if (!r.review.terms.isEmpty())
+        parts << tr("统一了 %1 个专有名词").arg(r.review.terms.size());
+    if (r.review.jaFixed > 0)
+        parts << tr("纠正 %1 处识别错误").arg(r.review.jaFixed);
+    const qint64 tokens = r.usage.promptTokens + r.usage.completionTokens;
+    if (tokens > 0)
+        parts << tr("用量 %1k token").arg(tokens / 1000.0, 0, 'f', 1);
+    if (r.usage.cacheHits > 0 && r.usage.requests == 0)
+        parts << tr("全部来自缓存");
+    m_summary = parts.join(QStringLiteral(" · "));
+    QString tip = r.review.summary;
+    for (const auto& [ja, zh] : r.review.terms)
+        tip += QStringLiteral("\n%1 → %2").arg(ja, zh);
+    if (!r.review.error.isEmpty())
+        tip += tr("\n校对没有完成：%1").arg(r.review.error);
+    m_status->setToolTip(tip.trimmed());
     setTranscribedUntil(m_duration);
     setProcessing(false);
     updateBanner();
@@ -310,7 +329,10 @@ void WorkspacePage::refreshStatus()
 {
     const int lines = m_model->rowCount();
     if (!m_processing) {
-        m_status->setText(lines > 0 ? tr("共 %1 行字幕").arg(lines) : QString());
+        QString text = lines > 0 ? tr("共 %1 行字幕").arg(lines) : QString();
+        if (!m_summary.isEmpty())
+            text += QStringLiteral(" · ") + m_summary;
+        m_status->setText(text);
         return;
     }
     if (lines == 0 || m_stage == tr("正在取消…")) {

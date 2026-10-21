@@ -16,6 +16,7 @@ public:
     // 边处理边更新
     void appendLines(int firstIndex, const QList<Segment>& lines);
     void setTranslations(int firstIndex, const QStringList& zh); // 空字符串不覆盖
+    void replaceSegments(const QList<Segment>& segments);       // 行数相同时原地刷新（保留滚动和选中）
     void setEditable(bool editable);
     void setCurrentRow(int row); // 正在播放的行加粗
     int currentRow() const { return m_current; }

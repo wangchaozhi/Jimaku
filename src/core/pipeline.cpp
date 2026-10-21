@@ -31,6 +31,8 @@ QString Pipeline::stageName(Stage stage)
         return tr("正在识别日语…");
     case Translating:
         return tr("正在翻译成中文…");
+    case Reviewing:
+        return tr("正在统一人名、校对识别错误…");
     }
     return QString();
 }
@@ -66,6 +68,7 @@ void Pipeline::retranslate(const QList<Segment>& segments, const TranslatorConfi
             return;
         }
         result.translateSeconds = timer.elapsed() / 1000.0;
+        result.usage = translator.usage();
         result.untranslated = t.failed;
         result.translateError = t.fatal;
         result.lastTranslateError = t.lastError;
@@ -83,8 +86,8 @@ void Pipeline::runAll(const PipelineOptions& o)
     // 各阶段在总进度里的占比
     const double wDecode = 0.05, wLoad = 0.05;
     const double wAsr = o.translate ? 0.6 : 0.9;
-    const double base[] = {0, wDecode, wDecode + wLoad, wDecode + wLoad + wAsr};
-    const double weight[] = {wDecode, wLoad, wAsr, 1.0 - (wDecode + wLoad + wAsr)};
+    const double base[] = {0, wDecode, wDecode + wLoad, wDecode + wLoad + wAsr, 0.95};
+    const double weight[] = {wDecode, wLoad, wAsr, 0.95 - (wDecode + wLoad + wAsr), 0.05};
     auto report = [this, &base, &weight](Stage s, double local) { emit progressChanged(base[s] + weight[s] * local); };
     auto enter = [this, &report](Stage s) {
         emit stageChanged(s);
@@ -144,9 +147,13 @@ void Pipeline::runAll(const PipelineOptions& o)
     auto submit = [&](bool final) {
         if (!o.translate)
             return;
-        while (submitted < lines.size() && (final || submitted + batch + ctx <= lines.size())) {
+        const int slack = 6; // 为了让一批在句末结束，最多多带几行
+        while (submitted < lines.size() && (final || submitted + batch + slack + ctx <= lines.size())) {
             const int first = submitted;
-            const int last = qMin(int(lines.size()), first + batch);
+            int last = qMin(int(lines.size()), first + batch);
+            // 一句话不要被切在两批里：延伸到句末（整句翻译、再按行拆分）
+            while (last < lines.size() && last - first < batch + slack && !Translator::endsSentence(lines[last - 1].ja))
+                ++last;
             submitted = last;
             const QStringList src = text(first, last), before = text(first - ctx, first), after = text(last, last + ctx);
             pool.start([&, first, src, before, after] {
@@ -215,9 +222,23 @@ void Pipeline::runAll(const PipelineOptions& o)
         }
         for (auto it = zh.cbegin(); it != zh.cend(); ++it)
             lines[it.key()].zh = it.value();
+        result.translateSeconds = timer.restart() / 1000.0;
+
+        // 5. 全片校对：统一专有名词、纠正识别错误（失败不影响已有译文）
+        if (o.review && !result.translateError.isError() && !lines.isEmpty()) {
+            enter(Reviewing);
+            result.review = translator.review(&lines, &m_cancel);
+            if (m_cancel) {
+                emit canceled();
+                return;
+            }
+            if (result.review.jaFixed + result.review.zhFixed > 0)
+                emit segmentsUpdated(lines);
+            result.reviewSeconds = timer.restart() / 1000.0;
+        }
         for (const Segment& s : lines)
             result.untranslated += s.zh.trimmed().isEmpty() ? 1 : 0;
-        result.translateSeconds = timer.restart() / 1000.0;
+        result.usage = translator.usage();
     } else {
         result.untranslated = int(lines.size());
     }

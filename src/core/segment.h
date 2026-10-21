@@ -16,6 +16,8 @@ struct Segment {
     double end = 0;
     QString ja;           // 日文原文
     QString zh;           // 中文译文；空 = 还没翻译或翻译失败
+    QString jaOriginal;   // 校对改过日文时保留语音识别的原文；空 = 没改过
+    QString zhOriginal;   // 校对改过译文时保留原来的译文；空 = 没改过
     QList<Word> words;    // 词级时间戳，断句用；导出时不需要
 
     double duration() const { return end - start; }
