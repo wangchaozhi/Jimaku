@@ -25,6 +25,7 @@ public:
     void applyEdit(QList<Segment> after, const QString& description);
     int nextId() const; // 新增行（拆分）用的 id
     void setEditable(bool editable);
+    void setFurigana(bool on); // 日文列显示为 漢字(かんじ)；编辑时仍是原文
     void setCurrentRow(int row); // 正在播放的行加粗
     int currentRow() const { return m_current; }
     // 覆盖 seconds 的行；没有返回 -1
@@ -45,6 +46,7 @@ private:
     QList<Segment> m_segments;
     QHash<int, int> m_rowOfId;
     bool m_editable = true;
+    bool m_furigana = false;
     QUndoStack* m_undo = nullptr;
     int m_current = -1;
 };

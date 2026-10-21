@@ -128,6 +128,16 @@ void setAppearance(const SubtitleWriter::Appearance& a)
     s.setValue(QStringLiteral("subtitle/scale"), a.scale);
 }
 
+bool furigana()
+{
+    return QSettings().value(QStringLiteral("subtitle/furigana"), true).toBool();
+}
+
+void setFurigana(bool on)
+{
+    QSettings().setValue(QStringLiteral("subtitle/furigana"), on);
+}
+
 bool subtitleStyle()
 {
     return QSettings().value(QStringLiteral("translate/subtitleStyle"), true).toBool();

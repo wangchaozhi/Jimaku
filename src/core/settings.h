@@ -39,6 +39,10 @@ void setLayout(SubtitleWriter::Layout layout);
 SubtitleWriter::Appearance appearance();
 void setAppearance(const SubtitleWriter::Appearance& a);
 
+// 日文显示振假名（预览和字幕表）
+bool furigana();
+void setFurigana(bool on);
+
 // 翻译风格
 bool subtitleStyle();   // 句末不加标点、逗号换空格、译文尽量短（默认开）
 void setSubtitleStyle(bool on);

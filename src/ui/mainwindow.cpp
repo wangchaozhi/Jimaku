@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 
+#include "core/furigana.h"
 #include "core/modelmanager.h"
 #include "core/settings.h"
 #include "core/subtitlereader.h"
@@ -92,6 +93,7 @@ MainWindow::MainWindow(QWidget* parent)
         updates->check(false);
     });
     QTimer::singleShot(3000, updates, [updates] { updates->check(true); });
+    QTimer::singleShot(0, this, &MainWindow::prepareFurigana);
 
     connect(m_drop, &DropPage::chooseFileRequested, this, &MainWindow::chooseFile);
     connect(m_drop, &DropPage::settingsRequested, this, &MainWindow::openSettings);
@@ -329,6 +331,32 @@ void MainWindow::openSettings()
     SettingsDialog dialog(this);
     if (dialog.exec() == QDialog::Accepted) {
         m_drop->refreshSummary();
+        prepareFurigana();
         m_workspace->applySettings();
     }
+}
+
+void MainWindow::prepareFurigana()
+{
+    if (!Settings::furigana() || FuriganaTagger::instance().isLoaded() || m_dictDownload)
+        return;
+    if (Furigana::dictionaryReady()) {
+        QString error;
+        if (FuriganaTagger::instance().load(Furigana::dictionaryDir(), &error))
+            m_workspace->applySettings();
+        else
+            qWarning("furigana: %s", qPrintable(error));
+        return;
+    }
+    // 字典只有 13 MB：后台静默下载，好了就自动显示振假名；失败下次启动再试
+    m_dictDownload = new DictionaryDownloader(this);
+    connect(m_dictDownload, &DictionaryDownloader::finished, this, [this](bool ok, const QString& error) {
+        m_dictDownload->deleteLater();
+        m_dictDownload = nullptr;
+        if (ok)
+            prepareFurigana();
+        else if (!error.isEmpty())
+            qWarning("furigana dictionary: %s", qPrintable(error));
+    });
+    m_dictDownload->start();
 }

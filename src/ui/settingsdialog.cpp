@@ -121,6 +121,9 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     of->addRow(tr("内容"), m_layout);
     of->addRow(tr("字幕位置"), m_position);
     of->addRow(tr("字幕大小"), m_size);
+    m_furigana = new QCheckBox(tr("日文显示振假名（预览和字幕表；首次使用下载约 13 MB 字典）"), this);
+    m_furigana->setChecked(Settings::furigana());
+    of->addRow(QString(), m_furigana);
 
     // 缓存：MKV 等格式的预览副本（和视频一样大）、翻译结果
     m_cacheLabel = new QLabel(this);
@@ -230,5 +233,6 @@ void SettingsDialog::accept()
     Settings::setOutputFormat(SubtitleWriter::Format(m_format->currentData().toInt()));
     Settings::setLayout(SubtitleWriter::Layout(m_layout->currentData().toInt()));
     Settings::setAppearance({m_position->currentData().toBool(), m_size->currentData().toDouble()});
+    Settings::setFurigana(m_furigana->isChecked());
     QDialog::accept();
 }

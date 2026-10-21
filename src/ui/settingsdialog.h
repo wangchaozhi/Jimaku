@@ -36,6 +36,7 @@ private:
     QLabel* m_cacheLabel;
     QComboBox* m_position;
     QComboBox* m_size;
+    QCheckBox* m_furigana;
     QPlainTextEdit* m_glossary;
     QCheckBox* m_style;
     QCheckBox* m_lyrics;

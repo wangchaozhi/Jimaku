@@ -17,6 +17,8 @@
   - 字幕风格（句末不加标点、逗号换空格、译文尽量短），英文歌词和口号默认保留原文（设置里可改）
   - 翻译结果按请求缓存：同一个视频重新处理不再重复花钱；完成后显示用了多少 token
 - **失败不装成功**：某一行没翻出来会标黄并在顶部提示，可一键补译；API key 错误、没余额、连不上服务时明确报错，识别结果仍然保留
+- **振假名**：日文字幕在预览里汉字上方标假名，字幕表显示为 漢字(かんじ)（用 MeCab + IPADIC 分词取读音，只给汉字注音；
+  首次使用自动下载约 13 MB 字典，设置里可关闭）
 - **编辑与导出**：双语字幕表格直接修改；导出 SRT / ASS（中日双语 / 仅中文 / 仅日文），或用 ffmpeg 把字幕烧录进视频
 - API key 只保存在系统钥匙串（macOS 钥匙串 / Windows 凭据管理器），不写进任何配置文件
 
@@ -82,5 +84,6 @@ tests/        断句、字幕格式、翻译回复解析、错误分类、UTF-8 
 
 ## 许可
 
-MIT。识别使用 whisper.cpp（MIT）和 OpenAI Whisper 模型（MIT）；钥匙串使用 qtkeychain（BSD）；界面使用 Qt（LGPLv3）。
+MIT。识别使用 whisper.cpp（MIT）和 OpenAI Whisper 模型（MIT）；钥匙串使用 qtkeychain（BSD）；界面使用 Qt（LGPLv3）；
+振假名使用 MeCab（BSD）和 IPADIC 字典（随字典下载附带 COPYING 许可）。
 Windows 安装包附带的 ffmpeg 为 LGPL 版本，来自 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)。

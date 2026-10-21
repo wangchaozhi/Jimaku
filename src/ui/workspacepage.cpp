@@ -1,6 +1,7 @@
 #include "workspacepage.h"
 
 #include "core/burner.h"
+#include "core/furigana.h"
 #include "core/segmentedit.h"
 #include "core/mediadecoder.h"
 #include "core/settings.h"
@@ -92,6 +93,7 @@ WorkspacePage::WorkspacePage(QWidget* parent)
     // 视频 + 播放控制
     m_view = new VideoView(this);
     m_view->setAppearance(Settings::appearance());
+    m_model->setFurigana(Settings::furigana() && FuriganaTagger::instance().isLoaded());
     m_player = new QMediaPlayer(this);
     m_audio = new QAudioOutput(this);
     m_player->setAudioOutput(m_audio);
@@ -643,6 +645,8 @@ void WorkspacePage::setQueueCount(int remaining)
 void WorkspacePage::applySettings()
 {
     m_view->setAppearance(Settings::appearance());
+    m_model->setFurigana(Settings::furigana() && FuriganaTagger::instance().isLoaded());
+    refreshOverlay();
 }
 
 void WorkspacePage::stopPlayback()
@@ -699,11 +703,16 @@ void WorkspacePage::refreshOverlay()
         if (row >= 0 && m_player->playbackState() == QMediaPlayer::PlayingState)
             m_table->scrollTo(m_model->index(row, 0), QAbstractItemView::EnsureVisible);
     }
+    const bool furigana = Settings::furigana() && FuriganaTagger::instance().isLoaded();
+    m_view->setRuby({}, false);
     if (!m_previewHint.isEmpty()) { // 还没有画面（正在转换或无法预览）：提示一直显示
         m_view->setSubtitle(QString(), QString(), m_previewHint);
     } else if (row >= 0) {
         const Segment& s = m_model->segments().at(row);
-        if (!s.zh.trimmed().isEmpty())
+        const bool hasZh = !s.zh.trimmed().isEmpty();
+        if (furigana)
+            m_view->setRuby(FuriganaTagger::instance().annotate(s.ja), !hasZh); // 日文是第二行；还没译文时是第一行
+        if (hasZh)
             m_view->setSubtitle(s.zh, s.ja);
         else
             m_view->setSubtitle(s.ja, QString(), m_processing ? tr("翻译中…") : QString());

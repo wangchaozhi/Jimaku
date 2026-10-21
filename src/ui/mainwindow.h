@@ -34,6 +34,7 @@ private:
     void openSettings();
     void retranslate();
     void showDropPage();
+    void prepareFurigana(); // 开着振假名：加载字典，没有就在后台下载
 
     Pipeline* m_pipeline;
     QStackedWidget* m_pages;
@@ -43,4 +44,5 @@ private:
     bool m_retranslating = false;
     QStringList m_queue;  // 批量处理中还没开始的视频
     bool m_batch = false;
+    class DictionaryDownloader* m_dictDownload = nullptr;
 };

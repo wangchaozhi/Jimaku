@@ -47,7 +47,30 @@ FetchContent_Declare(qtkeychain
     GIT_TAG 0.15.0
     GIT_SHALLOW TRUE)
 
-FetchContent_MakeAvailable(whisper qtkeychain)
+# MeCab：日文分词和读音（振假名用）。仓库是 autotools 的，这里只编运行库；源码里还有 register，用 C++14
+FetchContent_Declare(mecab
+    GIT_REPOSITORY https://github.com/taku910/mecab.git
+    GIT_TAG 61b90ba6e669dc2d7d533d4a80d206f3b31d52b1)
+
+FetchContent_MakeAvailable(whisper qtkeychain mecab)
+
+set(MECAB_SRC ${mecab_SOURCE_DIR}/mecab/src)
+file(GLOB MECAB_SOURCES ${MECAB_SRC}/*.cpp)
+list(FILTER MECAB_SOURCES EXCLUDE REGEX "/mecab(-[a-z-]+)?\\.cpp$") # 命令行工具
+add_library(mecab STATIC ${MECAB_SOURCES})
+set_target_properties(mecab PROPERTIES CXX_STANDARD 14)
+target_compile_definitions(mecab PRIVATE HAVE_CONFIG_H)
+target_include_directories(mecab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/mecab PUBLIC ${MECAB_SRC})
+if(WIN32)
+    # mecab.h 在 Windows 上默认 dllimport；静态链接时库和使用方都按 dllexport 声明即可
+    target_compile_definitions(mecab PUBLIC DLL_EXPORT NOMINMAX WIN32_LEAN_AND_MEAN PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_link_libraries(mecab PRIVATE advapi32) # 读注册表里的 mecabrc（我们用不到，但代码里有）
+endif()
+if(MSVC)
+    target_compile_options(mecab PRIVATE /w)
+else()
+    target_compile_options(mecab PRIVATE -w)
+endif()
 
 # --- 核心（程序和测试共用，不依赖界面）---------------------------------------
 add_library(jimaku_core STATIC
@@ -60,6 +83,7 @@ add_library(jimaku_core STATIC
     src/core/subtitlewriter.h src/core/subtitlewriter.cpp
     src/core/subtitlereader.h src/core/subtitlereader.cpp
     src/core/segmentedit.h src/core/segmentedit.cpp
+    src/core/furigana.h src/core/furigana.cpp
     src/core/burner.h src/core/burner.cpp
     src/core/modelmanager.h src/core/modelmanager.cpp
     src/core/settings.h src/core/settings.cpp
@@ -68,7 +92,7 @@ add_library(jimaku_core STATIC
     src/core/project.h src/core/project.cpp
     src/core/sleepguard.h src/core/sleepguard.cpp)
 target_include_directories(jimaku_core PUBLIC src)
-target_link_libraries(jimaku_core PUBLIC Qt6::Core Qt6::Network whisper qt6keychain)
+target_link_libraries(jimaku_core PUBLIC Qt6::Core Qt6::Network whisper qt6keychain PRIVATE mecab)
 if(APPLE)
     target_link_libraries(jimaku_core PUBLIC "-framework IOKit" "-framework CoreFoundation") # 处理时阻止睡眠
 endif()
@@ -131,7 +155,7 @@ endif()
 option(JIMAKU_BUILD_TESTS "Build unit tests" ON)
 if(JIMAKU_BUILD_TESTS)
     enable_testing()
-    foreach(name segmenter segmentedit subtitlewriter subtitlereader translator errors transcriber coverage)
+    foreach(name segmenter segmentedit subtitlewriter subtitlereader translator errors transcriber coverage furigana)
         qt_add_executable(${name}_test tests/${name}_test.cpp)
         target_link_libraries(${name}_test PRIVATE jimaku_core)
         add_test(NAME ${name} COMMAND ${name}_test)

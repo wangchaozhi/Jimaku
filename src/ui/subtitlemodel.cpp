@@ -1,5 +1,6 @@
 #include "subtitlemodel.h"
 
+#include "core/furigana.h"
 #include "core/segmentedit.h"
 
 #include <QColor>
@@ -118,6 +119,15 @@ void SubtitleModel::replaceSegments(const QList<Segment>& segments)
         emit dataChanged(index(0, 0), index(int(m_segments.size()) - 1, ColumnCount - 1));
 }
 
+void SubtitleModel::setFurigana(bool on)
+{
+    if (on == m_furigana)
+        return;
+    m_furigana = on;
+    if (!m_segments.isEmpty())
+        emit dataChanged(index(0, Japanese), index(int(m_segments.size()) - 1, Japanese));
+}
+
 void SubtitleModel::setEditable(bool editable)
 {
     m_editable = editable;
@@ -169,6 +179,8 @@ QVariant SubtitleModel::data(const QModelIndex& index, int role) const
     if (!index.isValid() || index.row() >= m_segments.size())
         return {};
     const Segment& s = m_segments[index.row()];
+    if (role == Qt::DisplayRole && index.column() == Japanese && m_furigana)
+        return Furigana::toBracketText(FuriganaTagger::instance().annotate(s.ja));
     if (role == Qt::DisplayRole || role == Qt::EditRole) {
         switch (index.column()) {
         case Time:
