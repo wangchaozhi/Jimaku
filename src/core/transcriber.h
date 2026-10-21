@@ -16,8 +16,9 @@ struct whisper_context;
 class Transcriber {
 public:
     // 解码策略：Greedy = 贪心 + 温度回退（whisper 默认，解码失败时随机采样重试，结果每次可能不同）；
-    // GreedyNoFallback = 只用贪心；BeamSearch = 束搜索（宽度 5），不回退
-    enum class Decoding { Greedy, GreedyNoFallback, BeamSearch };
+    // GreedyNoFallback = 只用贪心；BeamSearch = 束搜索（宽度 5），不回退；
+    // BeamSearchFallback = 束搜索 + 温度回退（OpenAI Whisper 的默认做法）
+    enum class Decoding { Greedy, GreedyNoFallback, BeamSearch, BeamSearchFallback };
     void setDecoding(Decoding d) { m_decoding = d; }
 
     Transcriber() = default;
