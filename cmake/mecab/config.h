@@ -9,6 +9,10 @@
 #define HAVE_STRING_H 1
 #define HAVE_SYS_STAT_H 1
 #define HAVE_FCNTL_H 1
+#if defined(_WIN32) && !defined(__GNUC__)
+// 上游 common.h 只在 MinGW 下定义 WPATH_FORCE，MSVC 用到却没定义：在这里补上（路径按 UTF-8 转宽字符）
+#define WPATH_FORCE(path) (MeCab::Utf8ToWide(path).c_str())
+#endif
 #if defined(_WIN32)
 #define HAVE_WINDOWS_H 1
 #else

@@ -63,7 +63,9 @@ target_compile_definitions(mecab PRIVATE HAVE_CONFIG_H)
 target_include_directories(mecab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/mecab PUBLIC ${MECAB_SRC})
 if(WIN32)
     # mecab.h 在 Windows 上默认 dllimport；静态链接时库和使用方都按 dllexport 声明即可
-    target_compile_definitions(mecab PUBLIC DLL_EXPORT NOMINMAX WIN32_LEAN_AND_MEAN PRIVATE _CRT_SECURE_NO_WARNINGS)
+    # _HAS_AUTO_PTR_ETC：MeCab 还在用 std::binary_function，新版 MSVC 标准库默认去掉了
+    target_compile_definitions(mecab PUBLIC DLL_EXPORT NOMINMAX WIN32_LEAN_AND_MEAN
+                               PRIVATE _CRT_SECURE_NO_WARNINGS _HAS_AUTO_PTR_ETC=1)
     target_link_libraries(mecab PRIVATE advapi32) # 读注册表里的 mecabrc（我们用不到，但代码里有）
 endif()
 if(MSVC)
