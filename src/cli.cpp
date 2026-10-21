@@ -6,6 +6,7 @@
 
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -57,6 +58,7 @@ int runCli(int argc, char** argv)
     p.addOption({QStringLiteral("no-translate"), QStringLiteral("只识别，不翻译")});
     p.addOption({QStringLiteral("no-review"), QStringLiteral("翻译后不做全片校对（统一人名、纠正识别错误）")});
     p.addOption({QStringLiteral("no-cache"), QStringLiteral("不使用翻译缓存")});
+    p.addOption({QStringLiteral("chunk"), QStringLiteral("长视频分段识别时每段的秒数（默认 300）"), QStringLiteral("seconds")});
     p.addPositionalArgument(QStringLiteral("video"), QStringLiteral("视频或音频文件"));
     p.process(app);
 
@@ -73,6 +75,10 @@ int runCli(int argc, char** argv)
     o.input = input;
     o.modelPath = ModelManager::modelPath(modelId);
     o.translate = !p.isSet(QStringLiteral("no-translate"));
+    if (p.isSet(QStringLiteral("chunk"))) {
+        o.chunkLength = qMax(30.0, p.value(QStringLiteral("chunk")).toDouble());
+        o.firstChunk = qMin(o.firstChunk, o.chunkLength);
+    }
     if (o.translate) {
         o.translator = Settings::translatorConfig();
         o.review = Settings::reviewEnabled() && !p.isSet(QStringLiteral("no-review"));
@@ -99,6 +105,12 @@ int runCli(int argc, char** argv)
 
     int code = 1;
     Pipeline pipeline;
+    QElapsedTimer clock;
+    double firstLine = -1; // 从开始到第一行字幕出现的秒数（边处理边预览时用户要等多久）
+    QObject::connect(&pipeline, &Pipeline::linesAdded, [&] {
+        if (firstLine < 0)
+            firstLine = clock.elapsed() / 1000.0;
+    });
     QObject::connect(&pipeline, &Pipeline::stageChanged, [](Pipeline::Stage s) { err(Pipeline::stageName(s)); });
     QObject::connect(&pipeline, &Pipeline::failed, [&](const TaskError& e) {
         err(QStringLiteral("失败：%1\n提示：%2").arg(e.message, e.hint));
@@ -121,6 +133,8 @@ int runCli(int argc, char** argv)
             {QStringLiteral("raw_segments"), r.rawSegments},
             {QStringLiteral("lines"), int(r.segments.size())},
             {QStringLiteral("longest_line_seconds"), longest},
+            {QStringLiteral("first_line_seconds"), firstLine},
+            {QStringLiteral("total_seconds"), clock.elapsed() / 1000.0},
             {QStringLiteral("untranslated"), r.untranslated},
             {QStringLiteral("translate_error"), r.translateError.isError() ? r.translateError.message : r.lastTranslateError},
             {QStringLiteral("review"), QJsonObject{{QStringLiteral("summary"), r.review.summary},
@@ -148,6 +162,7 @@ int runCli(int argc, char** argv)
         code = (o.translate && r.untranslated > 0) ? 2 : 0;
         QCoreApplication::exit();
     });
+    clock.start();
     pipeline.start(o);
     QCoreApplication::exec();
     return code;

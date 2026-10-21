@@ -12,6 +12,7 @@ struct Word {
 
 // 一条字幕。翻译只填 zh，不改时间轴
 struct Segment {
+    int id = -1;          // 处理过程中的稳定编号（分段识别时行不一定按时间顺序产生）
     double start = 0;
     double end = 0;
     QString ja;           // 日文原文
@@ -28,3 +29,7 @@ QString joinWords(const QList<Word>& words);
 
 // 字幕"长度"：不计空白的字符数
 int visibleLength(const QString& text);
+
+// 去掉识别"卡住"时反复输出的同一句话：连续 3 次以上、不少于 6 个字的相同文字只保留前 2 次
+// （"XG!" 这类短口号连喊是真的，不处理）
+QList<Segment> dropRepeats(const QList<Segment>& raw);

@@ -70,10 +70,39 @@ void Burner::run(const QStringList& args, double duration)
     m_process.start(ffmpeg, QStringList{QStringLiteral("-nostdin"), QStringLiteral("-y")} + args);
 }
 
+QStringList Burner::videoEncoderArgs(const QString& video)
+{
+    const QString ffmpeg = MediaDecoder::findTool(QStringLiteral("ffmpeg"));
+    QProcess p;
+    p.start(ffmpeg, {QStringLiteral("-hide_banner"), QStringLiteral("-encoders")});
+    p.waitForFinished(10000);
+    const QString encoders = QString::fromUtf8(p.readAllStandardOutput());
+#ifdef Q_OS_MACOS
+    // Apple 芯片的硬件编码：长视频重新编码快好几倍。码率跟原视频一致，画质基本不损失
+    if (encoders.contains(QLatin1String(" h264_videotoolbox "))) {
+        QProcess probe;
+        probe.start(MediaDecoder::findTool(QStringLiteral("ffprobe")),
+                    {QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-select_streams"), QStringLiteral("v:0"),
+                     QStringLiteral("-show_entries"), QStringLiteral("stream=bit_rate"), QStringLiteral("-of"), QStringLiteral("csv=p=0"),
+                     video});
+        probe.waitForFinished(10000);
+        qint64 bitrate = QString::fromUtf8(probe.readAllStandardOutput()).trimmed().toLongLong();
+        if (bitrate <= 0)
+            bitrate = 6000000;
+        return {QStringLiteral("-c:v"), QStringLiteral("h264_videotoolbox"), QStringLiteral("-b:v"), QString::number(bitrate)};
+    }
+#else
+    Q_UNUSED(video);
+    Q_UNUSED(encoders);
+#endif
+    return {QStringLiteral("-c:v"), QStringLiteral("libx264"), QStringLiteral("-preset"), QStringLiteral("veryfast"),
+            QStringLiteral("-crf"), QStringLiteral("20")};
+}
+
 void Burner::start(const QString& video, const QString& assFile, const QString& output, double duration)
 {
-    run({QStringLiteral("-i"), video, QStringLiteral("-vf"), QStringLiteral("subtitles='%1'").arg(escapeFilterPath(assFile)),
-         QStringLiteral("-c:a"), QStringLiteral("copy"), output},
+    run(QStringList{QStringLiteral("-i"), video, QStringLiteral("-vf"), QStringLiteral("subtitles='%1'").arg(escapeFilterPath(assFile))}
+            + videoEncoderArgs(video) + QStringList{QStringLiteral("-c:a"), QStringLiteral("copy"), output},
         duration);
 }
 

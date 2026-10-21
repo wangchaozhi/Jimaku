@@ -1,6 +1,8 @@
 #include "check.h"
 #include "core/segmenter.h"
 
+#include <cmath>
+
 // 按给定的词和间隔拼一个 whisper 原始分段：每个词时长 dur，词间停顿 gap
 static Segment rawSegment(const QStringList& words, double start, double dur = 0.3, double gap = 0.0)
 {
@@ -95,6 +97,15 @@ int main()
         for (const Segment& l : lines)
             intact = intact && !l.ja.startsWith(QChar(0x30A9));
         check("pause does not split katakana word", intact);
+    }
+
+    // 只有标点的行去掉；单个超长的词保留结尾、截到 6 秒
+    {
+        const auto lines = resegment({rawSegment({QStringLiteral("。")}, 0.0, 0.3), rawSegment({QStringLiteral("はい。")}, 3.0, 0.3)}, o);
+        expectEq("punctuation-only line dropped", int(lines.size()), 1);
+        const auto longWord = resegment({rawSegment({QStringLiteral("ああ")}, 10.0, 9.0)}, o);
+        check("single long word clipped", longWord.size() == 1 && longWord.first().duration() <= o.maxDuration + 1e-6
+                                              && std::abs(longWord.first().end - 19.0) < 1e-6);
     }
 
     // 太短的碎片并到前一行

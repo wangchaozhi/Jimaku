@@ -32,3 +32,17 @@ int visibleLength(const QString& text)
     }
     return n;
 }
+
+QList<Segment> dropRepeats(const QList<Segment>& raw)
+{
+    QList<Segment> out;
+    int run = 0;
+    for (const Segment& s : raw) {
+        const bool same = !out.isEmpty() && out.last().ja == s.ja;
+        run = same ? run + 1 : 0;
+        if (same && run >= 2 && visibleLength(s.ja) >= 6)
+            continue;
+        out.append(s);
+    }
+    return out;
+}

@@ -18,6 +18,9 @@ public:
     void startSoft(const QString& video, const QString& srtFile, const QString& output, double duration);
     void cancel();
 
+    // 视频编码参数：macOS 有硬件编码器时用 VideoToolbox（码率同原视频），否则 x264 veryfast
+    static QStringList videoEncoderArgs(const QString& video);
+
     // ffmpeg subtitles 滤镜的路径要转义 \ : '（Windows 盘符的冒号也要）
     static QString escapeFilterPath(const QString& path);
 

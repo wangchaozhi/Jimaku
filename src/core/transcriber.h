@@ -30,7 +30,8 @@ public:
     // onSegments 在识别过程中（工作线程里）每出几段调用一次，用于边识别边显示
     QList<Segment> transcribe(const std::vector<float>& pcm,
                               const std::function<void(double)>& progress, const std::atomic_bool* cancel,
-                              QString* error, const std::function<void(const QList<Segment>&)>& onSegments = {});
+                              QString* error, const std::function<void(const QList<Segment>&)>& onSegments = {},
+                              double timeOffset = 0); // 分段识别时这一段在整个视频里的起点（秒），加到所有时间上
 
 private:
     whisper_context* m_ctx = nullptr;

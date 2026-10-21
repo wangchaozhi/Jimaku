@@ -1,5 +1,6 @@
 #pragma once
 
+#include "coverage.h"
 #include "errors.h"
 #include "segmenter.h"
 #include "transcriber.h"
@@ -18,6 +19,12 @@ struct PipelineOptions {
     bool review = true; // 翻译完成后全片校对：统一专有名词、纠正识别错误
     TranslatorConfig translator;
     SegmenterOptions segmenter;
+    // 长视频分段识别：第一段短一些，第一行字幕更快出现
+    double firstChunk = 60;
+    double chunkLength = 300;
+    // 断点续做：上次已经识别的区间和字幕（按时间排序，id 按这里的顺序重新编号）
+    QList<TimeRange> resumeCovered;
+    QList<Segment> resumeSegments;
 };
 
 struct PipelineResult {
@@ -29,6 +36,8 @@ struct PipelineResult {
     ReviewOutcome review;
     TranslateUsage usage;
     double mediaDuration = 0;
+    QList<TimeRange> covered;
+    bool resumed = false;     // 接着上次的进度做的
     // translateSeconds：识别结束后还要等翻译多久（翻译和识别是同时进行的）
     double decodeSeconds = 0, loadSeconds = 0, transcribeSeconds = 0, translateSeconds = 0, reviewSeconds = 0;
     bool modelReused = false; // 模型已经在内存里，没有重新加载
@@ -48,6 +57,8 @@ public:
     // 只补译 zh 为空的行（"重试翻译"）
     void retranslate(const QList<Segment>& segments, const TranslatorConfig& config);
     void cancel();
+    // 优先识别这个时刻附近（预览时跳到了还没识别的地方）。线程安全
+    void prioritize(double seconds);
     bool isRunning() const { return m_thread && m_thread->isRunning(); }
 
     static QString stageName(Stage stage);
@@ -55,11 +66,11 @@ public:
 signals:
     void stageChanged(Pipeline::Stage stage);
     void progressChanged(double fraction); // 整体进度 0..1
-    // 边处理边推送（工作线程发出）：新定稿的字幕行、某一批的译文、已识别到的时刻（秒）
-    void linesAdded(int firstIndex, const QList<Segment>& lines);
-    void translated(int firstIndex, const QStringList& zh);
-    void transcribedUntil(double seconds);
-    void segmentsUpdated(const QList<Segment>& segments); // 校对后整表更新（行数不变）
+    // 边处理边推送（工作线程发出）。分段识别时行不一定按时间顺序到达，用 id 对应
+    void linesAdded(const QList<Segment>& lines);
+    void translated(const QList<int>& ids, const QStringList& zh);
+    void coverageChanged(const QList<TimeRange>& ranges); // 已识别的区间
+    void segmentsUpdated(const QList<Segment>& segments); // 最终结果（按时间排序，含校对修改）
     void finished(const PipelineResult& result);
     void failed(const TaskError& error);
     void canceled();
@@ -71,4 +82,5 @@ private:
     std::unique_ptr<Transcriber> m_transcriber; // 跨任务保留，模型只加载一次
     QPointer<QThread> m_thread;
     std::atomic_bool m_cancel{false};
+    std::atomic<double> m_priority{-1};
 };

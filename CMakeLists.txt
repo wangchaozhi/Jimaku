@@ -61,9 +61,15 @@ add_library(jimaku_core STATIC
     src/core/burner.h src/core/burner.cpp
     src/core/modelmanager.h src/core/modelmanager.cpp
     src/core/settings.h src/core/settings.cpp
-    src/core/pipeline.h src/core/pipeline.cpp)
+    src/core/pipeline.h src/core/pipeline.cpp
+    src/core/coverage.h src/core/coverage.cpp
+    src/core/project.h src/core/project.cpp
+    src/core/sleepguard.h src/core/sleepguard.cpp)
 target_include_directories(jimaku_core PUBLIC src)
 target_link_libraries(jimaku_core PUBLIC Qt6::Core Qt6::Network whisper qt6keychain)
+if(APPLE)
+    target_link_libraries(jimaku_core PUBLIC "-framework IOKit" "-framework CoreFoundation") # 处理时阻止睡眠
+endif()
 
 # --- 程序 -------------------------------------------------------------------
 set(APP_SOURCES
@@ -110,7 +116,7 @@ endif()
 option(JIMAKU_BUILD_TESTS "Build unit tests" ON)
 if(JIMAKU_BUILD_TESTS)
     enable_testing()
-    foreach(name segmenter subtitlewriter translator errors transcriber)
+    foreach(name segmenter subtitlewriter translator errors transcriber coverage)
         qt_add_executable(${name}_test tests/${name}_test.cpp)
         target_link_libraries(${name}_test PRIVATE jimaku_core)
         add_test(NAME ${name} COMMAND ${name}_test)

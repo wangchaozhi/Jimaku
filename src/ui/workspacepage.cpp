@@ -23,6 +23,8 @@
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QVBoxLayout>
+#include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -98,7 +100,7 @@ WorkspacePage::WorkspacePage(QWidget* parent)
     };
     connect(m_play, &QPushButton::clicked, this, toggle);
     connect(m_view, &VideoView::clicked, this, toggle);
-    connect(m_timeline, &Timeline::seekRequested, m_player, &QMediaPlayer::setPosition);
+    connect(m_timeline, &Timeline::seekRequested, this, &WorkspacePage::seekTo);
     connect(m_player, &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState s) {
         m_play->setIcon(style()->standardIcon(s == QMediaPlayer::PlayingState ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
     });
@@ -138,21 +140,28 @@ WorkspacePage::WorkspacePage(QWidget* parent)
     // 字幕表：单击跳到该行播放，处理完成后双击修改
     m_table = new QTableView(this);
     m_table->setModel(m_model);
-    m_table->setWordWrap(true);
+    // 长视频几千行：固定行高，不按内容逐行计算高度（字幕一行最多 18 个字，不需要换行）
+    m_table->setWordWrap(false);
+    m_table->setTextElideMode(Qt::ElideRight);
     m_table->setAlternatingRowColors(true);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->horizontalHeader()->setSectionResizeMode(SubtitleModel::Time, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(SubtitleModel::Japanese, QHeaderView::Stretch);
     m_table->horizontalHeader()->setSectionResizeMode(SubtitleModel::Chinese, QHeaderView::Stretch);
-    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    m_table->verticalHeader()->setDefaultSectionSize(m_table->fontMetrics().height() + 10);
     connect(m_table, &QTableView::clicked, this, [this](const QModelIndex& index) {
         if (index.isValid())
-            m_player->setPosition(qint64(m_model->segments().at(index.row()).start * 1000) + 1);
+            seekTo(qint64(m_model->segments().at(index.row()).start * 1000) + 1);
     });
     connect(m_model, &SubtitleModel::dataChanged, this, [this] {
         updateBanner();
         refreshOverlay();
+        scheduleSave(); // 包括处理完成后的手工修改
     });
+    m_saveTimer.setSingleShot(true);
+    m_saveTimer.setInterval(2000);
+    connect(&m_saveTimer, &QTimer::timeout, this, &WorkspacePage::saveProject);
 
     auto* split = new QSplitter(Qt::Vertical, this);
     split->addWidget(player);
@@ -184,11 +193,12 @@ WorkspacePage::WorkspacePage(QWidget* parent)
     layout->addLayout(bottom);
 }
 
-void WorkspacePage::begin(const QString& videoPath)
+void WorkspacePage::begin(const QString& videoPath, const QString& model, const Project& resume)
 {
     m_video = videoPath;
-    m_duration = 0;
-    m_transcribed = 0;
+    m_modelId = model;
+    m_complete = false;
+    m_duration = resume.duration;
     m_translated = 0;
     m_stage.clear();
     m_summary.clear();
@@ -196,14 +206,64 @@ void WorkspacePage::begin(const QString& videoPath)
     m_failure = {};
     m_translateError = {};
     m_lastTranslateError.clear();
+    m_etaBase = -1;
     m_title->setText(QFileInfo(videoPath).fileName());
-    m_model->setSegments({});
-    m_model->setCurrentRow(-1);
-    m_timeline->setProcessed(0);
+    // 接着上次的进度：id 按顺序编号，和 Pipeline 里的编号一致
+    QList<Segment> lines = resume.segments;
+    for (int i = 0; i < lines.size(); ++i) {
+        lines[i].id = i;
+        if (!lines[i].zh.isEmpty())
+            ++m_translated;
+    }
+    m_model->setSegments(lines);
+    m_coverage = resume.covered;
+    m_timeline->setProcessed(m_coverage);
     m_view->setSubtitle(QString(), QString());
     m_player->setSource(QUrl::fromLocalFile(videoPath));
     setProcessing(true);
     updateBanner();
+}
+
+void WorkspacePage::openResult(const Project& project)
+{
+    begin(project.video, project.model, project);
+    m_complete = true;
+    m_summary = tr("上次处理的结果");
+    setProcessing(false);
+    updateBanner();
+}
+
+bool WorkspacePage::covered(double seconds) const
+{
+    return std::any_of(m_coverage.cbegin(), m_coverage.cend(),
+                       [seconds](const TimeRange& r) { return seconds >= r.first && seconds < r.second; });
+}
+
+void WorkspacePage::seekTo(qint64 ms)
+{
+    m_player->setPosition(ms);
+    if (m_processing && !covered(ms / 1000.0))
+        emit priorityRequested(ms / 1000.0);
+}
+
+void WorkspacePage::scheduleSave()
+{
+    if (!m_video.isEmpty())
+        m_saveTimer.start();
+}
+
+void WorkspacePage::saveProject()
+{
+    if (m_video.isEmpty() || (m_model->rowCount() == 0 && m_coverage.isEmpty()))
+        return;
+    Project p;
+    p.video = m_video;
+    p.model = m_modelId;
+    p.duration = m_duration;
+    p.covered = m_coverage;
+    p.segments = m_model->segments();
+    p.complete = m_complete;
+    p.save();
 }
 
 void WorkspacePage::setProcessing(bool on)
@@ -230,26 +290,35 @@ void WorkspacePage::setStage(const QString& text)
     refreshStatus();
 }
 
-void WorkspacePage::addLines(int firstIndex, const QList<Segment>& lines)
+void WorkspacePage::addLines(const QList<Segment>& lines)
 {
-    m_model->appendLines(firstIndex, lines);
+    m_model->insertLines(lines);
     refreshStatus();
     refreshOverlay();
+    scheduleSave();
 }
 
-void WorkspacePage::addTranslations(int firstIndex, const QStringList& zh)
+void WorkspacePage::addTranslations(const QList<int>& ids, const QStringList& zh)
 {
     m_translated += int(zh.size());
-    m_model->setTranslations(firstIndex, zh);
+    m_model->setTranslations(ids, zh);
     refreshStatus();
 }
 
-void WorkspacePage::setTranscribedUntil(double seconds)
+void WorkspacePage::setCoverage(const QList<TimeRange>& ranges)
 {
-    m_transcribed = qMax(m_transcribed, seconds);
-    m_timeline->setProcessed(qint64(m_transcribed * 1000));
+    m_coverage = ranges;
+    m_timeline->setProcessed(ranges);
+    double sum = 0;
+    for (const TimeRange& r : ranges)
+        sum += r.second - r.first;
+    if (m_etaBase < 0) { // 从第一次报告开始计时（不算加载模型、也不算上次已经做完的部分）
+        m_etaBase = sum;
+        m_etaClock.start();
+    }
     refreshStatus();
     refreshOverlay();
+    scheduleSave();
 }
 
 void WorkspacePage::updateSegments(const QList<Segment>& segments)
@@ -284,8 +353,11 @@ void WorkspacePage::finish(const PipelineResult& r)
     if (!r.review.error.isEmpty())
         tip += tr("\n校对没有完成：%1").arg(r.review.error);
     m_status->setToolTip(tip.trimmed());
-    setTranscribedUntil(m_duration);
+    m_coverage = r.covered.isEmpty() ? QList<TimeRange>{{0, m_duration}} : r.covered;
+    m_timeline->setProcessed(m_coverage);
+    m_complete = r.untranslated == 0; // 有没翻出来的行：下次打开同一个视频会接着补译
     setProcessing(false);
+    saveProject();
     updateBanner();
 }
 
@@ -339,7 +411,17 @@ void WorkspacePage::refreshStatus()
         m_status->setText(m_stage);
         return;
     }
-    QString text = tr("已识别 %1 / %2").arg(clock(m_transcribed), clock(m_duration));
+    double done = 0;
+    for (const TimeRange& r : m_coverage)
+        done += r.second - r.first;
+    QString text = tr("已识别 %1 / %2").arg(clock(done), clock(m_duration));
+    // 剩余时间：按本次的识别速度估算（识别完以后只剩翻译收尾，不再显示）
+    const double gained = done - m_etaBase;
+    if (m_etaBase >= 0 && gained > 30 && done < m_duration - 1 && m_etaClock.elapsed() > 5000) {
+        const double rate = gained / (m_etaClock.elapsed() / 1000.0);
+        const int minutes = int(std::ceil((m_duration - done) / rate / 60.0));
+        text += minutes <= 1 ? tr(" · 预计不到 1 分钟") : tr(" · 预计还要 %1 分钟").arg(minutes);
+    }
     text += tr(" · 已翻译 %1 / %2 行").arg(qMin(m_translated, lines)).arg(lines);
     m_status->setText(text);
 }
@@ -359,7 +441,7 @@ void WorkspacePage::refreshOverlay()
             m_view->setSubtitle(s.zh, s.ja);
         else
             m_view->setSubtitle(s.ja, QString(), m_processing ? tr("翻译中…") : QString());
-    } else if (m_processing && t > m_transcribed + 0.5) {
+    } else if (m_processing && !covered(t)) {
         m_view->setSubtitle(QString(), QString(), tr("识别中…"));
     } else {
         m_view->setSubtitle(QString(), QString());

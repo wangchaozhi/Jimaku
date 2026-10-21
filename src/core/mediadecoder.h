@@ -19,6 +19,14 @@ double probeDuration(const QString& path, QString* error);
 bool decodePcm(const QString& path, double duration, std::vector<float>* pcm,
                const std::function<void(double)>& progress, const std::atomic_bool* cancel, QString* error);
 
+// 只解码 [start, start + length) 这一段（长视频分段识别，内存只占一段）。到文件末尾时可能比 length 短
+bool decodeRange(const QString& path, double start, double length, std::vector<float>* pcm,
+                 const std::atomic_bool* cancel, QString* error);
+
+// 在 pcm 的 [from, to) 秒范围里找最安静的位置（按 50 ms 能量取 0.5 s 窗口的最小值），返回秒数。
+// 分段时在这里切开，不会把一个词切成两半
+double quietestPoint(const std::vector<float>& pcm, double from, double to);
+
 constexpr int kSampleRate = 16000;
 
 } // namespace MediaDecoder

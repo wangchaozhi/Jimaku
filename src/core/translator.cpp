@@ -49,7 +49,14 @@ const char* kReviewPrompt =
     "{\"summary\": \"一句话概括视频内容\", \"terms\": [{\"ja\": \"日文\", \"zh\": \"中文\"}], "
     "\"fixes\": [{\"i\": 序号, \"ja\": \"纠正后的日文（不改则省略）\", \"zh\": \"修改后的中文（不改则省略）\"}]}";
 
+const char* kTermsPrompt =
+    "从下面的日语视频字幕里找出人名、团体名、作品名、地名、品牌等专有名词，给出统一的中文译法。"
+    "每条字幕是 \"日文 ｜ 现有中文译文\"（还没翻译时只有日文）。"
+    "现有译文里已经有的译法优先沿用其中最常见的一种；不认识的人名照原文保留，不要编造；拿不准的不要列出。"
+    "glossary 里已经确定的不用重复。只输出 JSON：{\"terms\": [{\"ja\": \"日文\", \"zh\": \"中文\"}]}";
+
 constexpr int kReviewChunk = 150; // 校对时每次交给模型的行数
+constexpr int kTermsChunk = 600;  // 提取术语时每次交给模型的行数
 
 QStringList toStringList(const QJsonArray& arr)
 {
@@ -176,9 +183,10 @@ QJsonArray Translator::buildMessages(const QStringList& lines, const QStringList
                                        : QStringLiteral("5. 英文歌词、口号、喊声和拟声词保留原文，不翻译。\n");
     if (m_config.subtitleStyle)
         system += QStringLiteral("6. 每段译文尽量简短，一般不超过 16 个汉字。\n");
-    if (!m_config.glossary.isEmpty()) {
+    const QList<QPair<QString, QString>> glossary = this->glossary();
+    if (!glossary.isEmpty()) {
         system += QStringLiteral("术语表（必须使用这些译法）：");
-        for (const auto& [ja, zh] : m_config.glossary)
+        for (const auto& [ja, zh] : glossary)
             system += QStringLiteral("\n%1 → %2").arg(ja, zh);
         system += QLatin1Char('\n');
     }
@@ -285,6 +293,80 @@ Translator::Result Translator::post(const QJsonArray& messages, double temperatu
     return Result::Ok;
 }
 
+QList<QPair<QString, QString>> Translator::glossary() const
+{
+    QMutexLocker lock(&m_termsMutex);
+    return m_config.glossary + m_terms;
+}
+
+QList<QPair<QString, QString>> Translator::terms() const
+{
+    QMutexLocker lock(&m_termsMutex);
+    return m_terms;
+}
+
+void Translator::addTerms(const QList<QPair<QString, QString>>& terms)
+{
+    QMutexLocker lock(&m_termsMutex);
+    for (const auto& t : terms) {
+        const auto same = [&](const QPair<QString, QString>& k) { return k.first == t.first; };
+        if (std::none_of(m_config.glossary.cbegin(), m_config.glossary.cend(), same)
+            && std::none_of(m_terms.cbegin(), m_terms.cend(), same))
+            m_terms.append(t);
+    }
+}
+
+QString Translator::complete(const QJsonArray& messages, double temperature, QString* error, const std::atomic_bool* cancel,
+                             bool* fatal)
+{
+    QString content;
+    Result r = Result::Retryable;
+    for (int attempt = 0; attempt <= m_config.maxRetries && r == Result::Retryable; ++attempt) {
+        if (attempt > 0)
+            QThread::msleep(1000u << (attempt - 1));
+        r = post(messages, temperature, &content, error, cancel);
+    }
+    if (fatal)
+        *fatal = r == Result::Fatal;
+    return r == Result::Ok ? content : QString();
+}
+
+QList<QPair<QString, QString>> Translator::extractTerms(const QList<Segment>& lines, const std::atomic_bool* cancel,
+                                                        QString* error)
+{
+    QList<QPair<QString, QString>> found;
+    for (int first = 0; first < lines.size(); first += kTermsChunk) {
+        if (cancel && cancel->load())
+            break;
+        QStringList text;
+        for (int i = first; i < qMin(int(lines.size()), first + kTermsChunk); ++i)
+            text << (lines[i].zh.isEmpty() ? lines[i].ja : lines[i].ja + QStringLiteral(" ｜ ") + lines[i].zh);
+        QJsonArray known;
+        for (const auto& [ja, zh] : glossary())
+            known.append(QJsonObject{{QStringLiteral("ja"), ja}, {QStringLiteral("zh"), zh}});
+        const QJsonObject payload{{QStringLiteral("glossary"), known}, {QStringLiteral("lines"), QJsonArray::fromStringList(text)}};
+        const QJsonArray messages{
+            QJsonObject{{QStringLiteral("role"), QStringLiteral("system")}, {QStringLiteral("content"), QString::fromUtf8(kTermsPrompt)}},
+            QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                        {QStringLiteral("content"), QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact))}},
+        };
+        QString err;
+        bool fatal = false;
+        const QString content = complete(messages, 0.2, &err, cancel, &fatal);
+        if (content.isEmpty()) {
+            if (error)
+                *error = err;
+            if (fatal)
+                break;
+            continue;
+        }
+        const ParsedReview parsed = parseReview(content, 0, 0); // 同样的 {"terms": [...]} 结构
+        addTerms(parsed.terms);
+        found += parsed.terms;
+    }
+    return found;
+}
+
 Translator::Result Translator::translateBatch(const QStringList& lines, const QStringList& before,
                                               const QStringList& after, QStringList* out, QString* error,
                                               const std::atomic_bool* cancel)
@@ -337,6 +419,8 @@ Translator::BatchOutcome Translator::translateLines(const QStringList& lines, co
         r = translateBatch({lines[k]}, all.mid(from, i - from), all.mid(i + 1, ctx), &one, &err, cancel);
         if (r == Result::Ok && !finish(one.first()).isEmpty()) {
             o.zh[k] = finish(one.first());
+        } else if (r == Result::Ok && visibleLength(lines[k]) <= 4) {
+            o.zh[k] = lines[k]; // 很短的语气词、喊声：模型不给译文时保留原文，不算翻译失败
         } else {
             if (r == Result::Ok)
                 err = tr("模型对“%1”返回了空译文").arg(lines[k]);
@@ -353,52 +437,60 @@ Translator::BatchOutcome Translator::translateLines(const QStringList& lines, co
 ReviewOutcome Translator::review(QList<Segment>* segments, const std::atomic_bool* cancel)
 {
     ReviewOutcome out;
-    QList<QPair<QString, QString>> known = m_config.glossary;
-    for (int first = 0; first < segments->size(); first += kReviewChunk) {
-        if (cancel && cancel->load())
-            break;
+    // 第一步：整片统一专有名词（长视频分几次，前面定下的带到后面），之后各段校对都用这份术语表
+    const QList<QPair<QString, QString>> before = terms();
+    extractTerms(*segments, cancel, &out.error);
+    for (const auto& t : terms()) {
+        if (!before.contains(t))
+            out.terms.append(t);
+    }
+    if (cancel && cancel->load())
+        return out;
+
+    // 第二步：各段并行校对，结果全部回来后再写回（工作期间 segments 只读）
+    QJsonArray glossaryJson;
+    for (const auto& [ja, zh] : glossary())
+        glossaryJson.append(QJsonObject{{QStringLiteral("ja"), ja}, {QStringLiteral("zh"), zh}});
+    const int chunks = int((segments->size() + kReviewChunk - 1) / kReviewChunk);
+    QList<ParsedReview> results(chunks);
+    std::atomic_bool stopped{false};
+    QMutex mutex;
+    auto runChunk = [&](int c) {
+        if (stopped || (cancel && cancel->load()))
+            return;
+        const int first = c * kReviewChunk;
         const int count = qMin(kReviewChunk, int(segments->size()) - first);
         QJsonArray items;
         for (int i = first; i < first + count; ++i) {
             const Segment& s = (*segments)[i];
             items.append(QJsonObject{{QStringLiteral("i"), i}, {QStringLiteral("ja"), s.ja}, {QStringLiteral("zh"), s.zh}});
         }
-        QJsonArray glossary;
-        for (const auto& [ja, zh] : known)
-            glossary.append(QJsonObject{{QStringLiteral("ja"), ja}, {QStringLiteral("zh"), zh}});
-        const QJsonObject payload{{QStringLiteral("glossary"), glossary}, {QStringLiteral("lines"), items}};
+        const QJsonObject payload{{QStringLiteral("glossary"), glossaryJson}, {QStringLiteral("lines"), items}};
         const QJsonArray messages{
             QJsonObject{{QStringLiteral("role"), QStringLiteral("system")}, {QStringLiteral("content"), QString::fromUtf8(kReviewPrompt)}},
             QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
                         {QStringLiteral("content"), QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact))}},
         };
+        QString err;
+        bool fatal = false;
+        const QString content = complete(messages, 0.2, &err, cancel, &fatal);
+        const ParsedReview parsed = content.isEmpty() ? ParsedReview{} : parseReview(content, first, count);
+        QMutexLocker lock(&mutex);
+        if (fatal)
+            stopped = true;
+        if (!parsed.ok)
+            out.error = content.isEmpty() ? err : tr("校对结果无法解析");
+        results[c] = parsed;
+    };
+    QThreadPool pool;
+    pool.setMaxThreadCount(qMax(1, m_config.parallel));
+    for (int c = 0; c < chunks; ++c)
+        pool.start([&runChunk, c] { runChunk(c); });
+    pool.waitForDone();
 
-        QString content, err;
-        Result r = Result::Retryable;
-        for (int attempt = 0; attempt <= m_config.maxRetries && r == Result::Retryable; ++attempt) {
-            if (attempt > 0)
-                QThread::msleep(1000u << (attempt - 1));
-            r = post(messages, 0.2, &content, &err, cancel);
-        }
-        if (r != Result::Ok) {
-            out.error = err;
-            if (r == Result::Fatal || r == Result::Canceled)
-                break;
-            continue;
-        }
-        const ParsedReview parsed = parseReview(content, first, count);
-        if (!parsed.ok) {
-            out.error = tr("校对结果无法解析");
-            continue;
-        }
+    for (const ParsedReview& parsed : results) {
         if (out.summary.isEmpty())
             out.summary = parsed.summary;
-        for (const auto& t : parsed.terms) {
-            if (std::none_of(known.cbegin(), known.cend(), [&](const auto& k) { return k.first == t.first; })) {
-                known.append(t);
-                out.terms.append(t);
-            }
-        }
         for (const ReviewFix& f : parsed.fixes) {
             Segment& s = (*segments)[f.index];
             if (!f.ja.isEmpty() && f.ja != s.ja) {

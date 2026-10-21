@@ -5,6 +5,7 @@
 
 #include <QCoreApplication>
 #include <QJsonArray>
+#include <QMutex>
 #include <QPair>
 #include <QStringList>
 #include <atomic>
@@ -74,6 +75,14 @@ public:
 
     TranslateUsage usage() const;
 
+    // 从字幕里提取人名、团体名等专有名词并给出统一译法（zh 可为空：只有日文时）。
+    // 长视频识别到一半就先提取一次，之后的翻译都带上这份术语表
+    QList<QPair<QString, QString>> extractTerms(const QList<Segment>& lines, const std::atomic_bool* cancel,
+                                                QString* error = nullptr);
+    // 追加到术语表（线程安全），之后的翻译请求都会带上
+    void addTerms(const QList<QPair<QString, QString>>& terms);
+    QList<QPair<QString, QString>> terms() const;
+
     // —— 以下是纯函数，单独暴露便于测试 ——
 
     // 解析翻译回复：{"t":[...]}，或直接是字符串数组；容忍 ``` 代码块和前后多余文字。条数不等于 expected 时返回空
@@ -112,10 +121,15 @@ private:
     Result translateBatch(const QStringList& lines, const QStringList& before, const QStringList& after,
                           QStringList* out, QString* error, const std::atomic_bool* cancel);
     QString finish(const QString& zh) const; // 套用字幕风格
+    QList<QPair<QString, QString>> glossary() const; // 用户术语表 + 提取出来的术语
+    QString complete(const QJsonArray& messages, double temperature, QString* error, const std::atomic_bool* cancel,
+                     bool* fatal = nullptr); // 带重试的一次请求，返回回复内容（失败为空）
 
     TranslatorConfig m_config;
     std::atomic<qint64> m_promptTokens{0};
     std::atomic<qint64> m_completionTokens{0};
     std::atomic_int m_requests{0};
     std::atomic_int m_cacheHits{0};
+    mutable QMutex m_termsMutex;
+    QList<QPair<QString, QString>> m_terms; // 运行中提取的术语
 };

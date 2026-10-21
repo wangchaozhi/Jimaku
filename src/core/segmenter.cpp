@@ -1,5 +1,7 @@
 #include "segmenter.h"
 
+#include <algorithm>
+
 namespace {
 
 bool endsSentence(const QString& text)
@@ -170,6 +172,18 @@ QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& o)
             continue;
         }
         ++i;
+    }
+
+    // 没有任何文字的行（静音处 whisper 常常只输出一个"。"）不是字幕
+    lines.erase(std::remove_if(lines.begin(), lines.end(),
+                               [](const Segment& s) {
+                                   return std::none_of(s.ja.cbegin(), s.ja.cend(), [](QChar c) { return c.isLetterOrNumber(); });
+                               }),
+                lines.end());
+    // 单个词却超过最长时长（多半是前面的静音算进了这个词）：保留结尾，把开头往后挪
+    for (Segment& s : lines) {
+        if (s.duration() > o.maxDuration)
+            s.start = s.end - o.maxDuration;
     }
 
     // 时间轴单调、每行至少显示 0.5 秒（不压到下一行）

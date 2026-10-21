@@ -24,30 +24,44 @@ void SubtitleModel::setSegments(const QList<Segment>& segments)
 {
     beginResetModel();
     m_segments = segments;
+    rebuildIndex();
+    m_current = -1;
     endResetModel();
 }
 
-void SubtitleModel::appendLines(int firstIndex, const QList<Segment>& lines)
+void SubtitleModel::rebuildIndex()
 {
-    if (firstIndex != m_segments.size() || lines.isEmpty())
-        return;
-    beginInsertRows({}, firstIndex, firstIndex + int(lines.size()) - 1);
-    m_segments += lines;
-    endInsertRows();
+    m_rowOfId.clear();
+    for (int r = 0; r < m_segments.size(); ++r)
+        m_rowOfId.insert(m_segments[r].id, r);
 }
 
-void SubtitleModel::setTranslations(int firstIndex, const QStringList& zh)
+void SubtitleModel::insertLines(const QList<Segment>& lines)
 {
-    int last = -1;
-    for (int k = 0; k < zh.size(); ++k) {
-        const int row = firstIndex + k;
-        if (row < 0 || row >= m_segments.size() || zh[k].isEmpty())
+    if (lines.isEmpty())
+        return;
+    // 一次推送的几行时间上是连续的：整块插到第一个开始时间更晚的行前面
+    auto it = std::upper_bound(m_segments.cbegin(), m_segments.cend(), lines.first().start,
+                               [](double t, const Segment& s) { return t < s.start; });
+    const int row = int(it - m_segments.cbegin());
+    beginInsertRows({}, row, row + int(lines.size()) - 1);
+    for (int k = 0; k < lines.size(); ++k)
+        m_segments.insert(row + k, lines[k]);
+    rebuildIndex();
+    endInsertRows();
+    if (m_current >= row)
+        m_current += int(lines.size());
+}
+
+void SubtitleModel::setTranslations(const QList<int>& ids, const QStringList& zh)
+{
+    for (int k = 0; k < ids.size() && k < zh.size(); ++k) {
+        const int row = m_rowOfId.value(ids[k], -1);
+        if (row < 0 || zh[k].isEmpty())
             continue;
         m_segments[row].zh = zh[k];
-        last = row;
+        emit dataChanged(index(row, Chinese), index(row, Chinese));
     }
-    if (last >= 0)
-        emit dataChanged(index(firstIndex, Chinese), index(last, Chinese));
 }
 
 void SubtitleModel::replaceSegments(const QList<Segment>& segments)
@@ -57,6 +71,7 @@ void SubtitleModel::replaceSegments(const QList<Segment>& segments)
         return;
     }
     m_segments = segments;
+    rebuildIndex();
     if (!m_segments.isEmpty())
         emit dataChanged(index(0, 0), index(int(m_segments.size()) - 1, ColumnCount - 1));
 }

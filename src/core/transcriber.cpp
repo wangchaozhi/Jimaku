@@ -19,22 +19,23 @@ struct Callbacks {
     const std::function<void(const QList<Segment>&)>* onSegments;
     const std::atomic_bool* cancel;
     QList<Segment>* out;
+    double offset;
 };
 
 // 第 s 段 → Segment：把字节级 token 攒成完整 UTF-8 再作为一个词，时间取首尾 token。没有文字时返回 false
-bool extractSegment(whisper_context* ctx, int s, Segment* seg)
+bool extractSegment(whisper_context* ctx, int s, double offset, Segment* seg)
 {
     const whisper_token eot = whisper_token_eot(ctx);
-    seg->start = whisper_full_get_segment_t0(ctx, s) / 100.0;
-    seg->end = whisper_full_get_segment_t1(ctx, s) / 100.0;
+    seg->start = whisper_full_get_segment_t0(ctx, s) / 100.0 + offset;
+    seg->end = whisper_full_get_segment_t1(ctx, s) / 100.0 + offset;
     QByteArray pending;
     double pendingStart = -1;
     const int nTok = whisper_full_n_tokens(ctx, s);
     for (int t = 0; t < nTok; ++t) {
         if (whisper_full_get_token_id(ctx, s, t) >= eot) // [_BEG_]、时间戳等特殊 token
             continue;
-        const double t0 = whisper_full_get_token_t0(ctx, s, t) / 100.0;
-        const double t1 = whisper_full_get_token_t1(ctx, s, t) / 100.0;
+        const double t0 = whisper_full_get_token_t0(ctx, s, t) / 100.0 + offset;
+        const double t1 = whisper_full_get_token_t1(ctx, s, t) / 100.0 + offset;
         if (pending.isEmpty())
             pendingStart = t0;
         pending += whisper_full_get_token_text(ctx, s, t);
@@ -112,7 +113,8 @@ bool Transcriber::load(const QString& modelPath, QString* error)
 
 QList<Segment> Transcriber::transcribe(const std::vector<float>& pcm,
                                        const std::function<void(double)>& progress, const std::atomic_bool* cancel,
-                                       QString* error, const std::function<void(const QList<Segment>&)>& onSegments)
+                                       QString* error, const std::function<void(const QList<Segment>&)>& onSegments,
+                                       double timeOffset)
 {
     if (!m_ctx) {
         *error = QObject::tr("识别模型还没有加载");
@@ -132,7 +134,7 @@ QList<Segment> Transcriber::transcribe(const std::vector<float>& pcm,
     wp.n_threads = qBound(1, QThread::idealThreadCount(), 8);
 
     QList<Segment> out;
-    Callbacks cb{&progress, &onSegments, cancel, &out};
+    Callbacks cb{&progress, &onSegments, cancel, &out, timeOffset};
     // 每解码出几段就立即交出去，界面可以边识别边显示
     wp.new_segment_callback = [](whisper_context* ctx, whisper_state*, int nNew, void* user) {
         auto* c = static_cast<Callbacks*>(user);
@@ -140,7 +142,7 @@ QList<Segment> Transcriber::transcribe(const std::vector<float>& pcm,
         QList<Segment> fresh;
         for (int s = n - nNew; s < n; ++s) {
             Segment seg;
-            if (extractSegment(ctx, s, &seg))
+            if (extractSegment(ctx, s, c->offset, &seg))
                 fresh.append(seg);
         }
         if (fresh.isEmpty())

@@ -23,9 +23,9 @@ void Timeline::setPosition(qint64 ms)
     update();
 }
 
-void Timeline::setProcessed(qint64 ms)
+void Timeline::setProcessed(const QList<TimeRange>& ranges)
 {
-    m_processed = ms;
+    m_processed = ranges;
     update();
 }
 
@@ -56,7 +56,11 @@ void Timeline::paintEvent(QPaintEvent*)
     QColor processed = palette().color(QPalette::Highlight); // 已识别：强调色的浅色
     processed.setAlpha(90);
     p.setBrush(processed);
-    p.drawRoundedRect(part(m_processed), 2, 2);
+    for (const TimeRange& r : m_processed) {
+        QRectF rect = part(qint64(r.second * 1000));
+        rect.setLeft(part(qint64(r.first * 1000)).right());
+        p.drawRoundedRect(rect, 2, 2);
+    }
     p.setBrush(palette().color(QPalette::Highlight));
     p.drawRoundedRect(part(m_position), 2, 2);
     const QRectF played = part(m_position);

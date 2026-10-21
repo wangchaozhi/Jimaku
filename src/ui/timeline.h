@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/coverage.h"
+
 #include <QWidget>
 
 // 播放进度条：已识别的部分着色，拖动或点击跳转
@@ -10,7 +12,7 @@ public:
 
     void setDuration(qint64 ms);
     void setPosition(qint64 ms);
-    void setProcessed(qint64 ms); // 已识别到的位置
+    void setProcessed(const QList<TimeRange>& ranges); // 已识别的区间（秒）
 
     QSize sizeHint() const override { return {400, 22}; }
 
@@ -28,5 +30,5 @@ private:
 
     qint64 m_duration = 0;
     qint64 m_position = 0;
-    qint64 m_processed = 0;
+    QList<TimeRange> m_processed;
 };

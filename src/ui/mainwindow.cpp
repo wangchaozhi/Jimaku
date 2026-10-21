@@ -14,6 +14,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPushButton>
 #include <QStackedWidget>
 #include <QStandardPaths>
 
@@ -68,7 +69,8 @@ MainWindow::MainWindow(QWidget* parent)
     });
     connect(m_pipeline, &Pipeline::linesAdded, m_workspace, &WorkspacePage::addLines);
     connect(m_pipeline, &Pipeline::translated, m_workspace, &WorkspacePage::addTranslations);
-    connect(m_pipeline, &Pipeline::transcribedUntil, m_workspace, &WorkspacePage::setTranscribedUntil);
+    connect(m_pipeline, &Pipeline::coverageChanged, m_workspace, &WorkspacePage::setCoverage);
+    connect(m_workspace, &WorkspacePage::priorityRequested, m_pipeline, &Pipeline::prioritize);
     connect(m_pipeline, &Pipeline::segmentsUpdated, m_workspace, &WorkspacePage::updateSegments);
     connect(m_pipeline, &Pipeline::finished, this, [this](const PipelineResult& r) {
         if (m_retranslating) {
@@ -175,15 +177,40 @@ bool MainWindow::ensureApiKey()
 
 void MainWindow::startFile(const QString& path)
 {
-    if (m_pipeline->isRunning() || !ensureModel() || !ensureApiKey())
+    if (m_pipeline->isRunning())
+        return;
+    const QString model = Settings::asrModel();
+    Project previous = Project::load(path, model);
+    if (previous.complete) {
+        QMessageBox box(QMessageBox::Question, tr("已经处理过"), tr("这个视频之前已经生成过字幕。"), QMessageBox::NoButton, this);
+        QPushButton* open = box.addButton(tr("打开上次的结果"), QMessageBox::AcceptRole);
+        QPushButton* redo = box.addButton(tr("重新处理"), QMessageBox::DestructiveRole);
+        box.addButton(QMessageBox::Cancel);
+        box.setDefaultButton(open);
+        box.exec();
+        if (box.clickedButton() == open) {
+            m_currentFile = path;
+            m_workspace->openResult(previous);
+            m_pages->setCurrentWidget(m_workspace);
+            return;
+        }
+        if (box.clickedButton() != redo)
+            return;
+        Project::remove(path);
+        previous = {};
+    }
+    if (!ensureModel() || !ensureApiKey())
         return;
     m_currentFile = path;
     PipelineOptions o;
     o.input = path;
-    o.modelPath = ModelManager::modelPath(Settings::asrModel());
+    o.modelPath = ModelManager::modelPath(model);
     o.translator = Settings::translatorConfig();
     o.review = Settings::reviewEnabled();
-    m_workspace->begin(path);
+    // 上次中途退出：接着做（已识别的区间不再识别，已翻译的行不再翻译）
+    o.resumeCovered = previous.covered;
+    o.resumeSegments = previous.segments;
+    m_workspace->begin(path, model, previous);
     m_pages->setCurrentWidget(m_workspace);
     m_pipeline->start(o);
 }
