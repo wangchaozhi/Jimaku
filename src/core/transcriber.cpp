@@ -1,0 +1,158 @@
+#include "transcriber.h"
+
+#include <QFileInfo>
+#include <QObject>
+#include <QThread>
+#include <cstdio>
+#include <whisper.h>
+
+namespace {
+
+void quietLog(ggml_log_level level, const char* text, void*)
+{
+    if (level >= GGML_LOG_LEVEL_ERROR || qEnvironmentVariableIsSet("JIMAKU_DEBUG"))
+        fputs(text, stderr);
+}
+
+struct Callbacks {
+    const std::function<void(double)>* progress;
+    const std::atomic_bool* cancel;
+};
+
+} // namespace
+
+int completeUtf8Length(const QByteArray& bytes)
+{
+    const int n = bytes.size();
+    int i = n - 1;
+    // 往回找最后一个字符的首字节（跳过 10xxxxxx 续字节，最多 3 个）
+    while (i >= 0 && i > n - 4 && (uchar(bytes[i]) & 0xC0) == 0x80)
+        --i;
+    if (i < 0)
+        return 0;
+    const uchar lead = uchar(bytes[i]);
+    int need = 1;
+    if ((lead & 0xE0) == 0xC0)
+        need = 2;
+    else if ((lead & 0xF0) == 0xE0)
+        need = 3;
+    else if ((lead & 0xF8) == 0xF0)
+        need = 4;
+    return (n - i >= need) ? n : i;
+}
+
+Transcriber::~Transcriber()
+{
+    if (m_ctx)
+        whisper_free(m_ctx);
+}
+
+bool Transcriber::load(const QString& modelPath, QString* error)
+{
+    if (m_ctx && modelPath == m_modelPath)
+        return true;
+    if (!QFileInfo::exists(modelPath)) {
+        *error = QObject::tr("识别模型不存在：%1").arg(modelPath);
+        return false;
+    }
+    if (m_ctx) {
+        whisper_free(m_ctx);
+        m_ctx = nullptr;
+    }
+    whisper_log_set(quietLog, nullptr);
+    whisper_context_params cp = whisper_context_default_params();
+    cp.use_gpu = true;
+    cp.flash_attn = true;
+    m_ctx = whisper_init_from_file_with_params(QFile::encodeName(modelPath).constData(), cp);
+    if (!m_ctx) {
+        *error = QObject::tr("识别模型加载失败（文件可能下载不完整）：%1").arg(modelPath);
+        m_modelPath.clear();
+        return false;
+    }
+    m_modelPath = modelPath;
+    return true;
+}
+
+QList<Segment> Transcriber::transcribe(const std::vector<float>& pcm,
+                                       const std::function<void(double)>& progress, const std::atomic_bool* cancel,
+                                       QString* error)
+{
+    if (!m_ctx) {
+        *error = QObject::tr("识别模型还没有加载");
+        return {};
+    }
+
+    whisper_full_params wp = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    wp.language = "ja";
+    wp.translate = false;
+    wp.token_timestamps = true;
+    wp.no_context = true; // 不拿上一段当提示，避免一句话被重复输出很多遍
+    wp.suppress_nst = true;
+    wp.print_progress = false;
+    wp.print_realtime = false;
+    wp.print_timestamps = false;
+    wp.print_special = false;
+    wp.n_threads = qBound(1, QThread::idealThreadCount(), 8);
+
+    Callbacks cb{&progress, cancel};
+    wp.progress_callback = [](whisper_context*, whisper_state*, int percent, void* user) {
+        auto* c = static_cast<Callbacks*>(user);
+        if (*c->progress)
+            (*c->progress)(percent / 100.0);
+    };
+    wp.progress_callback_user_data = &cb;
+    wp.abort_callback = [](void* user) {
+        auto* c = static_cast<Callbacks*>(user);
+        return c->cancel && c->cancel->load();
+    };
+    wp.abort_callback_user_data = &cb;
+
+    const int rc = whisper_full(m_ctx, wp, pcm.data(), int(pcm.size()));
+    if (cancel && cancel->load())
+        return {};
+    if (rc != 0) {
+        *error = QObject::tr("语音识别失败（whisper 错误码 %1）").arg(rc);
+        return {};
+    }
+
+    const whisper_token eot = whisper_token_eot(m_ctx);
+    QList<Segment> out;
+    const int nSeg = whisper_full_n_segments(m_ctx);
+    for (int s = 0; s < nSeg; ++s) {
+        Segment seg;
+        seg.start = whisper_full_get_segment_t0(m_ctx, s) / 100.0;
+        seg.end = whisper_full_get_segment_t1(m_ctx, s) / 100.0;
+
+        // 把字节级 token 攒成完整 UTF-8 再作为一个词，时间取首尾 token
+        QByteArray pending;
+        double pendingStart = -1;
+        const int nTok = whisper_full_n_tokens(m_ctx, s);
+        for (int t = 0; t < nTok; ++t) {
+            if (whisper_full_get_token_id(m_ctx, s, t) >= eot) // [_BEG_]、时间戳等特殊 token
+                continue;
+            const double t0 = whisper_full_get_token_t0(m_ctx, s, t) / 100.0;
+            const double t1 = whisper_full_get_token_t1(m_ctx, s, t) / 100.0;
+            if (pending.isEmpty())
+                pendingStart = t0;
+            pending += whisper_full_get_token_text(m_ctx, s, t);
+            const int ok = completeUtf8Length(pending);
+            if (ok == 0)
+                continue;
+            Word w{pendingStart, qMax(t1, pendingStart), QString::fromUtf8(pending.left(ok))};
+            pending = pending.mid(ok);
+            pendingStart = t1;
+            if (!w.text.trimmed().isEmpty())
+                seg.words.append(w);
+        }
+        if (seg.words.isEmpty())
+            continue;
+        seg.ja = joinWords(seg.words);
+        // 词级时间比整段时间更贴近实际发声
+        seg.start = qMax(seg.start, seg.words.first().start);
+        seg.end = qMax(seg.start, qMin(seg.end, seg.words.last().end));
+        out.append(seg);
+    }
+    if (progress)
+        progress(1.0);
+    return out;
+}

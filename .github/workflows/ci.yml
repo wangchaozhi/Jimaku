@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        id: ver
+        run: |
+          ref='${{ github.ref_name }}'
+          if [[ $ref =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then v=${BASH_REMATCH[1]}; else v=0.0.0; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.12.0'
+          aqtversion: '==3.3.*'
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+
+      - name: Configure
+        # 只出 Apple 芯片版本：whisper.cpp 的 Metal 加速只对 Apple 芯片有意义
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DJIMAKU_VERSION=${{ steps.ver.outputs.version }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          v='${{ steps.ver.outputs.version }}'
+          macdeployqt build/Jimaku.app
+          # 没有苹果开发者证书，用 ad-hoc 签名；首次打开需要在“隐私与安全性”里允许
+          codesign --force --deep --sign - build/Jimaku.app
+          ditto -c -k --keepParent build/Jimaku.app "Jimaku-$v-macos-arm64.zip"
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: macos
+          path: Jimaku-*-macos-arm64.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $ref = '${{ github.ref_name }}'
+          $v = if ($ref -match '^v(\d+\.\d+\.\d+)$') { $Matches[1] } else { '0.0.0' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.12.0'
+          # Qt 6.11.3 起 Windows 仓库按编译器拆分，aqtinstall 3.3.0 找不到；先固定到已支持的提交（同 SnapPin）
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7'
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Configure
+        # 加引号：pwsh 会把未加引号的 -DX=0.1.0 在点号处拆开
+        run: cmake -S . -B build -A x64 "-DJIMAKU_VERSION=${{ steps.ver.outputs.version }}"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          $dir = 'dist/Jimaku'
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item build/Release/Jimaku.exe $dir
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime "$dir/Jimaku.exe"
+          # 直接附带 VC++ 运行库，免去用户安装 vc_redist
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT\*.dll" | Copy-Item -Destination $dir
+          # 附带 LGPL 版 ffmpeg / ffprobe（程序会先在自己的目录里找）
+          Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
+          Get-ChildItem ffmpeg -Recurse -Include ffmpeg.exe, ffprobe.exe | Copy-Item -Destination $dir
+          Compress-Archive -Path $dir -DestinationPath "Jimaku-$v-windows-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: windows
+          path: Jimaku-*-windows-x64.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: Jimaku-*.zip
+          generate_release_notes: true
