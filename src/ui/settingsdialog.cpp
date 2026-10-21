@@ -39,6 +39,8 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     auto* keyRow = new QHBoxLayout;
     keyRow->addWidget(m_key, 1);
     keyRow->addWidget(m_clearKey);
+    // 输入框出于安全总是空的，单独一行明确告诉用户 key 是否已经存好
+    m_keyStatus = new QLabel(this);
     m_glossary = new QPlainTextEdit(Settings::glossaryText(), this);
     m_glossary->setPlaceholderText(tr("每行一条：日文=中文\n例如：ジュリン=JURIN"));
     m_glossary->setFixedHeight(80);
@@ -49,6 +51,7 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     tf->addRow(tr("接口地址"), m_baseUrl);
     tf->addRow(tr("模型"), m_model);
     tf->addRow(tr("API key"), keyRow);
+    tf->addRow(QString(), m_keyStatus);
     tf->addRow(tr("术语表"), m_glossary);
 
     // 识别
@@ -115,13 +118,20 @@ void SettingsDialog::loadProvider(const QString& id)
     m_model->setText(Settings::modelName());
     Settings::setProviderId(saved);
 
-    const bool hasKey = Settings::hasApiKey(id);
+    const QString savedKey = Settings::apiKey(id);
+    const bool hasKey = !savedKey.isEmpty();
     m_key->clear();
     m_key->setEnabled(p.needsKey || id == QLatin1String("custom"));
     m_key->setPlaceholderText(!m_key->isEnabled() ? tr("本地服务不需要 key")
                               : hasKey             ? tr("已保存在系统钥匙串（留空则不修改）")
                                                    : tr("粘贴 API key，保存在系统钥匙串"));
     m_clearKey->setEnabled(hasKey);
+    if (!m_key->isEnabled())
+        m_keyStatus->clear();
+    else if (hasKey) // 只露出末尾 4 位，方便核对是哪一个 key
+        m_keyStatus->setText(tr("✓ 已保存在系统钥匙串（…%1）").arg(savedKey.right(4)));
+    else
+        m_keyStatus->setText(tr("还没有保存 key，翻译前需要填写"));
     m_loadedProvider = id;
 }
 

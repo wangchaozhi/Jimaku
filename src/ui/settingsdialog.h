@@ -25,6 +25,7 @@ private:
     QLineEdit* m_model;
     QLineEdit* m_key;
     QPushButton* m_clearKey;
+    QLabel* m_keyStatus;
     QComboBox* m_asrModel;
     QLabel* m_asrStatus;
     QPushButton* m_download;
