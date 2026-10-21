@@ -7,6 +7,10 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QDirIterator>
+#include <QLocale>
+#include <QStandardPaths>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -118,6 +122,21 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     of->addRow(tr("字幕位置"), m_position);
     of->addRow(tr("字幕大小"), m_size);
 
+    // 缓存：MKV 等格式的预览副本（和视频一样大）、翻译结果
+    m_cacheLabel = new QLabel(this);
+    auto* clearCache = new QPushButton(tr("清理"), this);
+    connect(clearCache, &QPushButton::clicked, this, [this] {
+        const QString root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        QDir(root + QStringLiteral("/preview")).removeRecursively();
+        QDir(root + QStringLiteral("/translate")).removeRecursively();
+        refreshCache();
+    });
+    auto* cacheRow = new QHBoxLayout;
+    cacheRow->addWidget(m_cacheLabel, 1);
+    cacheRow->addWidget(clearCache);
+    of->addRow(tr("缓存"), cacheRow);
+    refreshCache();
+
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &SettingsDialog::reject);
@@ -162,6 +181,24 @@ void SettingsDialog::loadProvider(const QString& id)
     else
         m_keyStatus->setText(tr("还没有保存 key，翻译前需要填写"));
     m_loadedProvider = id;
+}
+
+void SettingsDialog::refreshCache()
+{
+    auto sizeOf = [](const QString& dir) {
+        qint64 total = 0;
+        QDirIterator it(dir, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            total += it.fileInfo().size();
+        }
+        return total;
+    };
+    const QString root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QLocale loc;
+    m_cacheLabel->setText(tr("预览副本 %1 · 翻译 %2")
+                              .arg(loc.formattedDataSize(sizeOf(root + QStringLiteral("/preview"))),
+                                   loc.formattedDataSize(sizeOf(root + QStringLiteral("/translate")))));
 }
 
 void SettingsDialog::refreshModelStatus()

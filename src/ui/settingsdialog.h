@@ -20,6 +20,7 @@ public:
 private:
     void loadProvider(const QString& id);
     void refreshModelStatus();
+    void refreshCache();
 
     QComboBox* m_provider;
     QLineEdit* m_baseUrl;
@@ -32,6 +33,7 @@ private:
     QPushButton* m_download;
     QComboBox* m_format;
     QComboBox* m_layout;
+    QLabel* m_cacheLabel;
     QComboBox* m_position;
     QComboBox* m_size;
     QPlainTextEdit* m_glossary;
