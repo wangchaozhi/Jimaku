@@ -46,13 +46,39 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      - name: Import signing certificate
+        # 固定的自签名证书：签名身份不变，升级后钥匙串里的"始终允许"仍然有效（同 SnapPin）。
+        # 没有配置 secrets（如 fork 仓库）时跳过，退回 ad-hoc 签名
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: sign
+        env:
+          P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12" ]; then echo "未配置签名证书，使用 ad-hoc 签名"; echo "identity=-" >> "$GITHUB_OUTPUT"; exit 0; fi
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpw=$(openssl rand -hex 16)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/id.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/id.p12"
+          # 用证书的 SHA-1 指纹签名：不依赖证书叫什么名字
+          id=$(security find-identity "$kc" | awk '$2 ~ /^[0-9A-F]{40}$/ {print $2; exit}')
+          if [ -z "$id" ]; then echo "::error::导入的 p12 里没有可用的签名身份"; exit 1; fi
+          echo "identity=$id" >> "$GITHUB_OUTPUT"
+
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           v='${{ steps.ver.outputs.version }}'
           macdeployqt build/Jimaku.app
-          # 没有苹果开发者证书，用 ad-hoc 签名；首次打开需要在“隐私与安全性”里允许
-          codesign --force --deep --sign - build/Jimaku.app
+          # 不是苹果开发者证书，首次打开仍需在“隐私与安全性”里允许
+          codesign --force --deep --sign "${{ steps.sign.outputs.identity }}" build/Jimaku.app
+          codesign -d -r- build/Jimaku.app
           ditto -c -k --keepParent build/Jimaku.app "Jimaku-$v-macos-arm64.zip"
 
       - uses: actions/upload-artifact@v4
