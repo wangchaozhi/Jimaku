@@ -9,6 +9,7 @@
 #define HAVE_STRING_H 1
 #define HAVE_SYS_STAT_H 1
 #define HAVE_FCNTL_H 1
+#define HAVE_UNSIGNED_LONG_LONG_INT 1 // 64 位 Windows 上 size_t 是 unsigned long long，没有这个重载会有二义性
 #if defined(_WIN32) && !defined(__GNUC__)
 // 上游 common.h 只在 MinGW 下定义 WPATH_FORCE，MSVC 用到却没定义：在这里补上（路径按 UTF-8 转宽字符）
 #define WPATH_FORCE(path) (MeCab::Utf8ToWide(path).c_str())
