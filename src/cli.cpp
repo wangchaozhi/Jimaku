@@ -55,6 +55,7 @@ int runCli(int argc, char** argv)
     p.addOption({QStringLiteral("format"), QStringLiteral("srt 或 ass"), QStringLiteral("format"), QStringLiteral("srt")});
     p.addOption({QStringLiteral("layout"), QStringLiteral("both / zh / ja"), QStringLiteral("layout"), QStringLiteral("both")});
     p.addOption({QStringLiteral("model"), QStringLiteral("识别模型：large-v3-turbo / medium / small"), QStringLiteral("id")});
+    p.addOption({QStringLiteral("model-file"), QStringLiteral("直接指定 ggml 模型文件（试用其他 whisper 模型）"), QStringLiteral("path")});
     p.addOption({QStringLiteral("no-translate"), QStringLiteral("只识别，不翻译")});
     p.addOption({QStringLiteral("no-review"), QStringLiteral("翻译后不做全片校对（统一人名、纠正识别错误）")});
     p.addOption({QStringLiteral("no-cache"), QStringLiteral("不使用翻译缓存")});
@@ -70,12 +71,13 @@ int runCli(int argc, char** argv)
     }
     const QString input = QFileInfo(p.positionalArguments().first()).absoluteFilePath();
     const QString modelId = p.isSet(QStringLiteral("model")) ? ModelManager::find(p.value(QStringLiteral("model"))).id : Settings::asrModel();
-    if (!ensureModel(modelId))
+    const QString modelFile = p.value(QStringLiteral("model-file"));
+    if (modelFile.isEmpty() && !ensureModel(modelId))
         return 1;
 
     PipelineOptions o;
     o.input = input;
-    o.modelPath = ModelManager::modelPath(modelId);
+    o.modelPath = modelFile.isEmpty() ? ModelManager::modelPath(modelId) : QFileInfo(modelFile).absoluteFilePath();
     o.translate = !p.isSet(QStringLiteral("no-translate"));
     o.translator.glossary += Settings::parseGlossary(p.values(QStringLiteral("term")).join(QLatin1Char('\n')));
     const QString decode = p.value(QStringLiteral("decode"));

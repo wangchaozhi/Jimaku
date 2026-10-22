@@ -47,7 +47,7 @@
 
 ```bash
 Jimaku --cli 视频.mp4 [-o 输出.srt] [--format srt|ass] [--layout both|zh|ja] [--model large-v3-turbo|medium|small]
-       [--no-translate] [--no-review] [--no-cache] [--chunk 秒数] [--decode greedy|nofallback|beam|beamfallback]
+       [--model-file 模型.bin] [--no-translate] [--no-review] [--no-cache] [--chunk 秒数] [--decode greedy|nofallback|beam|beamfallback]
 ```
 
 识别 + 断句 + 翻译 + 校对后写出字幕，统计信息（行数、最长一行的秒数、未翻译行数、校对结果、token 用量、各阶段耗时）以 JSON 打到标准输出。
