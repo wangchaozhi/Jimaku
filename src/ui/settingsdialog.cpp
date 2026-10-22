@@ -59,6 +59,7 @@ SettingsDialog::SettingsDialog(QWidget* parent)
 
     auto* translateBox = new QGroupBox(tr("翻译"), this);
     auto* tf = new QFormLayout(translateBox);
+    tf->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow); // macOS 默认输入框不拉伸，接口地址显示不全
     tf->addRow(tr("服务"), m_provider);
     tf->addRow(tr("接口地址"), m_baseUrl);
     tf->addRow(tr("模型"), m_model);
@@ -86,6 +87,7 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     statusRow->addWidget(m_download);
     auto* asrBox = new QGroupBox(tr("识别"), this);
     auto* af = new QFormLayout(asrBox);
+    af->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     af->addRow(tr("模型"), m_asrModel);
     af->addRow(QString(), statusRow);
 
@@ -117,6 +119,7 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     m_size->setCurrentIndex(sizeIndex);
     auto* outBox = new QGroupBox(tr("输出"), this);
     auto* of = new QFormLayout(outBox);
+    of->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     of->addRow(tr("格式"), m_format);
     of->addRow(tr("内容"), m_layout);
     of->addRow(tr("字幕位置"), m_position);

@@ -22,6 +22,13 @@ QJsonObject toJson(const Segment& s)
         o.insert(QStringLiteral("jaOriginal"), s.jaOriginal);
     if (!s.zhOriginal.isEmpty())
         o.insert(QStringLiteral("zhOriginal"), s.zhOriginal);
+    // 词级时间（拆分时按词切）：只存和原文对得上的，时间精确到毫秒
+    if (!s.words.isEmpty() && joinWords(s.words) == s.ja) {
+        QJsonArray words;
+        for (const Word& w : s.words)
+            words.append(QJsonArray{std::round(w.start * 1000) / 1000, std::round(w.end * 1000) / 1000, w.text});
+        o.insert(QStringLiteral("words"), words);
+    }
     return o;
 }
 
@@ -34,6 +41,10 @@ Segment fromJson(const QJsonObject& o)
     s.zh = o.value(QStringLiteral("zh")).toString();
     s.jaOriginal = o.value(QStringLiteral("jaOriginal")).toString();
     s.zhOriginal = o.value(QStringLiteral("zhOriginal")).toString();
+    for (const QJsonValue& v : o.value(QStringLiteral("words")).toArray()) {
+        const QJsonArray w = v.toArray();
+        s.words.append({w.at(0).toDouble(), w.at(1).toDouble(), w.at(2).toString()});
+    }
     return s;
 }
 

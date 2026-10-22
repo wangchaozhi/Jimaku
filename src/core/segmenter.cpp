@@ -148,6 +148,11 @@ Segment merged(const Segment& a, const Segment& b)
 
 } // namespace
 
+bool breaksWord(const QList<Word>& words, int k)
+{
+    return k > 0 && k < words.size() && splitsAWord(words[k - 1], words[k]);
+}
+
 QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& o)
 {
     QList<Segment> lines;

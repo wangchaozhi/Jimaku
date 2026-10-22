@@ -30,6 +30,7 @@ public:
     int currentRow() const { return m_current; }
     // 覆盖 seconds 的行；没有返回 -1
     int rowAt(double seconds) const;
+    int rowOfId(int id) const { return m_rowOfId.value(id, -1); }
     const QList<Segment>& segments() const { return m_segments; }
     int untranslatedCount() const;
 

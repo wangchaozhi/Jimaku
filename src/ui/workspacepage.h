@@ -63,6 +63,7 @@ private:
     void exportSubtitles();
     // 编辑：当前选中行、播放位置
     int selectedRow() const;
+    void selectId(int id); // 编辑后表格会整体刷新：重新选中编辑的那一行，编辑按钮保持可用
     void setTimeHere(bool start);
     void splitHere();
     void mergeWithNext();

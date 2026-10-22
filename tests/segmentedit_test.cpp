@@ -26,6 +26,33 @@ int main()
     check("first keeps id, second new", a.id == 7 && b.id == -1);
     check("split near edge refused", !split(s, 10.1, &a, &b));
 
+    // 播放位置落在片假名词中间：改到最近的词边界
+    {
+        Segment g;
+        g.start = 10;
+        g.end = 14;
+        g.words = {{10, 11, QStringLiteral("日本人の")}, {11, 12, QStringLiteral("7人組")}, {12, 12.4, QStringLiteral("ガ")},
+                   {12.4, 13, QStringLiteral("ールズ")}, {13, 14, QStringLiteral("グループ")}};
+        g.ja = joinWords(g.words);
+        check("split inside word ok", split(g, 12.5, &a, &b));
+        expectEq("split moved to word boundary", a.ja + QLatin1Char('|') + b.ja, QStringLiteral("日本人の7人組|ガールズグループ"));
+        check("split time follows boundary", a.end == 12.0 && b.start == 12.0);
+    }
+
+    // 没有词级时间：按比例切时不切在片假名词中间
+    {
+        Segment k;
+        k.start = 0;
+        k.end = 15;
+        k.ja = QStringLiteral("ニューヨークのタイムズスクエア");
+        check("katakana split ok", split(k, 9.0, &a, &b));
+        expectEq("char split moved to script boundary", a.ja + QLatin1Char('|') + b.ja, QStringLiteral("ニューヨークの|タイムズスクエア"));
+        // 词级时间和原文对不上（手工改过原文）：不按旧的词切
+        Segment edited = s;
+        edited.ja = QStringLiteral("今日は雨明日は晴れ");
+        check("stale words ignored", split(edited, 12.0, &a, &b) && a.words.isEmpty() && (a.ja + b.ja) == edited.ja);
+    }
+
     // 没有词级时间：按时间比例切字符
     Segment plain = s;
     plain.words.clear();

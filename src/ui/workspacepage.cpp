@@ -266,6 +266,7 @@ void WorkspacePage::begin(const QString& videoPath, const QString& model, const 
             ++m_translated;
     }
     m_model->setSegments(lines);
+    m_table->scrollToTop(); // 不沿用上一个视频的滚动位置
     m_undo->clear();
     m_coverage = resume.covered;
     m_timeline->setProcessed(m_coverage);
@@ -590,6 +591,17 @@ void WorkspacePage::setTimeHere(bool start)
     else
         SegmentEdit::setEnd(&after[row], t);
     m_model->applyEdit(after, start ? tr("设为起点") : tr("设为终点"));
+    selectId(after[row].id);
+}
+
+void WorkspacePage::selectId(int id)
+{
+    const int row = m_model->rowOfId(id);
+    if (row < 0)
+        return;
+    m_table->selectRow(row);
+    m_table->scrollTo(m_model->index(row, 0), QAbstractItemView::EnsureVisible);
+    updateEditButtons();
 }
 
 void WorkspacePage::splitHere()
@@ -607,6 +619,7 @@ void WorkspacePage::splitHere()
     after[row] = a;
     after.insert(row + 1, b);
     m_model->applyEdit(after, tr("拆分"));
+    selectId(a.id);
 }
 
 void WorkspacePage::mergeWithNext()
@@ -618,6 +631,7 @@ void WorkspacePage::mergeWithNext()
     after[row] = SegmentEdit::merge(after[row], after[row + 1]);
     after.removeAt(row + 1);
     m_model->applyEdit(after, tr("合并"));
+    selectId(after[row].id);
 }
 
 void WorkspacePage::deleteSelected()

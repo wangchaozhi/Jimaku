@@ -13,6 +13,9 @@ struct SegmenterOptions {
 
 QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& options = {});
 
+// 在 words[k - 1] 和 words[k] 之间换行会不会把一个词从中间断开（或让长音符、小写假名、标点落到行首）
+bool breaksWord(const QList<Word>& words, int k);
+
 // 边识别边断句：每收到 whisper 的几段原始分段就交出已经"定稿"的字幕行。
 // 最后一行先留着（下一段可能要和它合并），所以交出的行之后不会再变，序号稳定
 class IncrementalSegmenter {
