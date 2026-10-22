@@ -139,6 +139,30 @@ int main()
         check("long duration split", ok, QString::number(lines.size()));
     }
 
+    // 一串断不开的片假名稍微超过 18 字：整串留在一行，不从词中间切开（ス|テージ），后面的汉字另起一行
+    {
+        const auto lines = resegment({rawSegment({QStringLiteral("クライ"), QStringLiteral("バック"), QStringLiteral("シリーズ"),
+                                                  QStringLiteral("ファイナル"), QStringLiteral("ス"), QStringLiteral("テ"),
+                                                  QStringLiteral("ージ"), QStringLiteral("阪神"), QStringLiteral("対"),
+                                                  QStringLiteral("横浜")},
+                                                 0.0, 0.3)},
+                                     o);
+        expectEq("katakana run kept whole", lines.value(0).ja, QStringLiteral("クライバックシリーズファイナルステージ"));
+        expectEq("next word on new line", lines.value(1).ja, QStringLiteral("阪神対横浜"));
+    }
+
+    // 再长就只能硬切，但长音符、小写假名不能落到行首
+    {
+        const QStringList words{QStringLiteral("インター"), QStringLiteral("ナショナル"), QStringLiteral("チャンピオン"),
+                                QStringLiteral("シップ"),   QStringLiteral("ファイナル"), QStringLiteral("トーナ"),
+                                QStringLiteral("メント"),   QStringLiteral("ステ"),       QStringLiteral("ージ")};
+        const auto lines = resegment({rawSegment(words, 0.0, 0.2)}, o);
+        bool ok = lines.size() >= 2;
+        for (const Segment& s : lines)
+            ok = ok && !s.ja.startsWith(QStringLiteral("ー")) && visibleLength(s.ja) <= o.maxChars + o.overflowChars;
+        check("hard split keeps long vowel", ok, QString::number(lines.size()));
+    }
+
     // 长停顿处换行
     {
         const auto lines = resegment({rawSegment({QStringLiteral("えっと、"), QStringLiteral("それでは")}, 0.0, 0.8, 1.5)}, o);

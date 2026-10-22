@@ -53,6 +53,9 @@ Script scriptOf(QChar c)
     return Script::Other;
 }
 
+// 长音符、小写假名不能放行首
+const QString kNoLineStart = QStringLiteral("ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ");
+
 // 会不会把一个词从中间断开（whisper 的 token 不是词，常常把一个词拆成几段）。
 // 日语字幕可以换行的地方：助词或标点之后，或者下一段以汉字、片假名、英文开头（新词开始）
 bool splitsAWord(const Word& left, const Word& right)
@@ -61,8 +64,7 @@ bool splitsAWord(const Word& left, const Word& right)
     const QString r = right.text.trimmed();
     if (l.isEmpty() || r.isEmpty())
         return false;
-    static const QString noLineStart = QStringLiteral("ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ");
-    if (noLineStart.contains(r.front())) // 长音符、小写假名不能放行首
+    if (kNoLineStart.contains(r.front())) // 长音符、小写假名不能放行首
         return true;
     if (endsClause(l) || endsSentence(l))
         return false;
@@ -81,15 +83,15 @@ int lengthOf(const QList<Word>& words, int from, int to)
     return n;
 }
 
-// 在 words 里找最合适的断点 j（前半段为 [0, j)），找不到返回 -1
-int bestSplit(const QList<Word>& words, const SegmenterOptions& o)
+// 在 words 里找最合适的断点 j（前半段为 [0, j)，不超过 maxChars 个字），找不到返回 -1
+int bestSplit(const QList<Word>& words, int maxChars)
 {
     int best = -1;
     double bestScore = -1;
     const int total = lengthOf(words, 0, words.size());
     for (int j = 1; j < words.size(); ++j) {
         const int left = lengthOf(words, 0, j);
-        if (left < 3 || left > o.maxChars)
+        if (left < 3 || left > maxChars)
             continue;
         const Word& prev = words[j - 1];
         const Word& next = words[j];
@@ -109,6 +111,18 @@ int bestSplit(const QList<Word>& words, const SegmenterOptions& o)
         }
     }
     return best;
+}
+
+// 放宽字数也找不到断点时的硬切：取不超长的最靠后的位置，但不让长音符、小写假名落到行首
+// （ステ|ージ）；实在没有才切在最后一个词前
+int hardSplit(const QList<Word>& words, const SegmenterOptions& o)
+{
+    for (int j = words.size() - 1; j >= 1; --j) {
+        const QString r = words[j].text.trimmed();
+        if (lengthOf(words, 0, j) <= o.maxChars && !r.isEmpty() && !kNoLineStart.contains(r.front()))
+            return j;
+    }
+    return words.size() - 1;
 }
 
 Segment makeLine(const QList<Word>& words)
@@ -152,12 +166,21 @@ QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& o)
             // 超长就在当前行里找断点，可能要切多次
             while (cur.size() > 1
                    && (lengthOf(cur, 0, cur.size()) > o.maxChars || cur.last().end - cur.first().start > o.maxDuration)) {
-                int j = bestSplit(cur, o);
+                int j = bestSplit(cur, o.maxChars);
                 if (j < 0) {
-                    // 没有合适的断点：只是时间超了就不拆（后面会截短显示时间），字数超了才硬切
-                    if (lengthOf(cur, 0, cur.size()) <= o.maxChars)
+                    // 没有合适的断点：只是时间超了就不拆（后面会截短显示时间）
+                    const int length = lengthOf(cur, 0, cur.size());
+                    if (length <= o.maxChars)
                         break;
-                    j = cur.size() - 1;
+                    // 字数超了：先在稍长一点的范围里找不断词的断点（ファイナルステージ|阪神），
+                    // 整行就是一串断不开的片假名时先留着，再长才硬切
+                    const int softMax = o.maxChars + o.overflowChars;
+                    j = bestSplit(cur, softMax);
+                    if (j < 0) {
+                        if (length <= softMax)
+                            break;
+                        j = hardSplit(cur, o);
+                    }
                 }
                 QList<Word> head = cur.mid(0, j);
                 cur = cur.mid(j);
