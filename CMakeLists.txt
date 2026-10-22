@@ -32,6 +32,11 @@ set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA ${JIMAKU_CUDA} CACHE BOOL "" FORCE)
+# 没指定显卡架构时 ggml 会为好几代显卡各编一遍，又慢又容易把内存耗光；本机构建只编本机显卡。
+# 要给别的显卡用就自己指定，例如 -DCMAKE_CUDA_ARCHITECTURES="75;86;89"
+if(JIMAKU_CUDA AND NOT DEFINED CMAKE_CUDA_ARCHITECTURES AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+    set(CMAKE_CUDA_ARCHITECTURES native)
+endif()
 # 发布包要能在别人的电脑上跑，不针对构建机的 CPU 指令集优化
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(whisper
@@ -139,6 +144,18 @@ set_target_properties(Jimaku PROPERTIES
     MACOSX_BUNDLE_ICON_FILE jimaku.icns
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+
+# Windows + CUDA：cuBLAS 和 CUDA 运行库是动态库，复制到 exe 旁边，不依赖 PATH 里有 CUDA
+if(WIN32 AND JIMAKU_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    file(GLOB _cuda_dlls "${CUDAToolkit_BIN_DIR}/cudart64_*.dll" "${CUDAToolkit_BIN_DIR}/cublas64_*.dll"
+                         "${CUDAToolkit_BIN_DIR}/cublasLt64_*.dll")
+    if(_cuda_dlls)
+        add_custom_command(TARGET Jimaku POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_cuda_dlls} "$<TARGET_FILE_DIR:Jimaku>"
+            VERBATIM)
+    endif()
+endif()
 
 # macOS：钥匙串的"始终允许"绑定在签名上。默认的临时签名每次编译都会变，于是每次都弹窗；
 # 用固定的证书签名（钥匙串里有名为 "Jimaku Dev" 的代码签名证书时自动使用）就只需授权一次
