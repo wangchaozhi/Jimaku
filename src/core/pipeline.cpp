@@ -279,6 +279,7 @@ void Pipeline::runAll(const PipelineOptions& o)
         recentRaw.erase(key(start));
         const double covered = coverage.coveredSeconds();
         QList<Segment> raw;
+        QList<std::pair<Segment, TimeRange>> loops; // 反复输出的那句话、被去掉的重复覆盖的时间
         if (cut >= 0.3) {
             raw = m_transcriber->transcribe(
                 pcm, [&](double p) { report(Transcribing, (covered + p * (coverEnd - start)) / result.mediaDuration); }, &m_cancel,
@@ -287,10 +288,47 @@ void Pipeline::runAll(const PipelineOptions& o)
                     // 去掉识别卡住时反复输出的同一句（和本区间之前的几段一起判断）
                     // 前面几段里本身也可能有被去掉的重复：按它们去重后的条数截取（去重只看前面，前缀结果不变）
                     const QList<Segment> kept = dropRepeats(recent + fresh).mid(dropRepeats(recent).size());
+                    // 被去掉的重复：记下时间，识别完这一段后重新识别，找回卡住期间真正说的话
+                    for (int i = 0, k = 0; i < fresh.size(); ++i) {
+                        if (k < kept.size() && kept[k].start == fresh[i].start && kept[k].ja == fresh[i].ja) {
+                            ++k;
+                            continue;
+                        }
+                        if (!loops.isEmpty() && loops.last().first.ja == fresh[i].ja && fresh[i].start - loops.last().second.second < 2.0)
+                            loops.last().second.second = fresh[i].end;
+                        else {
+                            // 往前找到这句话第一次出现的地方（前两次保留在字幕里，但那段时间同样可能是卡住的）
+                            const QList<Segment> before = recent + fresh.mid(0, i);
+                            double from = fresh[i].start;
+                            for (int j = int(before.size()) - 1; j >= 0 && before[j].ja == fresh[i].ja; --j)
+                                from = before[j].start;
+                            loops.append({fresh[i], {from, fresh[i].end}});
+                        }
+                    }
                     recent = (recent + fresh).mid(qMax(qsizetype(0), recent.size() + fresh.size() - 4));
                     add(seg.feed(kept));
                 },
                 start);
+        }
+        // 卡住的地方从卡住处重新开一个识别窗口（换了上下文一般就不会再卡），找回真正的台词
+        for (const auto& [loop, range] : loops) {
+            if (m_cancel || range.second - range.first < 3.0)
+                continue;
+            const qsizetype from = qBound(qsizetype(0), qsizetype((range.first - start) * sr), qsizetype(pcm.size()));
+            const qsizetype to = qBound(from, qsizetype((range.second - start) * sr), qsizetype(pcm.size()));
+            const std::vector<float> part(pcm.begin() + from, pcm.begin() + to);
+            QString retryError;
+            const QList<Segment> retry = m_transcriber->transcribe(part, {}, &m_cancel, &retryError, {}, start + from / double(sr));
+            ++result.loopRetries;
+            // 又是那句话（或其中一部分）的不要；只找回台词，语气词、喘息不补
+            QList<Segment> found;
+            for (const Segment& s : dropRepeats(retry)) {
+                if (!repeatsLoop(loop.ja, s.ja) && !onlyInterjection(s.ja))
+                    found.append(s);
+            }
+            const QList<Segment> lines = resegment(found, o.segmenter);
+            result.recoveredLines += int(lines.size());
+            add(lines);
         }
         pcm.clear();
         if (m_cancel) {
@@ -346,6 +384,7 @@ void Pipeline::runAll(const PipelineOptions& o)
     QList<Segment> lines;
     for (int id : sortedIds())
         lines.append(all[id]);
+    fixTiming(&lines); // 分段识别、优先识别时不同段的行可能在交界处重叠
 
     if (o.translate) {
         // 5. 全片校对：统一专有名词、纠正识别错误（失败不影响已有译文）

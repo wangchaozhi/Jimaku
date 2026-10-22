@@ -35,6 +35,10 @@ int visibleLength(const QString& text);
 // 需要翻译：没有译文，或者译文里还有假名（模型把日语语气词原样返回了，或只翻了一半）
 bool needsTranslation(const Segment& s);
 
+// 时间轴单调：每行不早于上一行结束（两行同时开始时后一行往后挪），每行至少显示 minDuration 秒（不压到下一行）。
+// after：第一行不早于这个时间（接在已经定稿的行后面）。lines 须按开始时间排好
+void fixTiming(QList<Segment>* lines, double after = -1, double minDuration = 0.5);
+
 // 合并紧挨着的相同字幕（うん、あー 连说十几次会变成十几行闪烁）：间隔不超过 maxGap 秒、
 // 合并后不超过 maxDuration 秒的连续相同行并成一行
 QList<Segment> mergeRepeatedLines(const QList<Segment>& lines, double maxGap = 1.5, double maxDuration = 6.0);
@@ -44,6 +48,12 @@ QList<Segment> mergeRepeatedLines(const QList<Segment>& lines, double maxGap = 1
 // - 西里尔、韩文等日语视频里不会出现的文字
 // - 日文行里夹着的低置信度（< 0.5）英文词；整行英文时置信度 < 0.5 才丢（真的英文歌词、口号一般 > 0.5）
 bool cleanNoise(Segment* s);
+
+// 只有语气词、喘息（あー、うーん、んっ、はぁ）
+bool onlyInterjection(const QString& text);
+
+// text 是不是卡住时反复输出的那句话（或其中一部分）：忽略标点比较，差一两个字也算
+bool repeatsLoop(const QString& loop, const QString& text);
 
 // 去掉识别"卡住"时反复输出的同一句话（忽略标点比较）：
 // - 不少于 6 个字的句子连续出现 3 次以上只保留前 2 次，差一两个字也算同一句

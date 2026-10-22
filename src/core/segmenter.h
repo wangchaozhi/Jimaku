@@ -25,4 +25,5 @@ public:
 private:
     SegmenterOptions m_options;
     QList<Segment> m_pending; // 0 或 1 行
+    double m_lastEnd = -1;    // 已经交出去的最后一行的结束时间
 };

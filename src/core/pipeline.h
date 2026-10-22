@@ -31,6 +31,8 @@ struct PipelineOptions {
 struct PipelineResult {
     QList<Segment> segments;
     int rawSegments = 0;     // whisper 原始分段数（断句前）
+    int loopRetries = 0;     // 识别卡在一句话上反复输出、重新识别的次数
+    int recoveredLines = 0;  // 重新识别找回的字幕行数
     int untranslated = 0;    // 没有译文的行数；> 0 时界面必须提示
     TaskError translateError; // 翻译整体失败（key 错、连不上）；识别结果仍然保留
     QString lastTranslateError;

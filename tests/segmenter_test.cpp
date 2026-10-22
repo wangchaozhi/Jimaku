@@ -50,6 +50,32 @@ int main()
             expectEq("merged line within max duration", s.end - s.start <= 6.0, true);
     }
 
+    // 同时开始的两行：后一行往后挪，前一行至少显示 0.5 秒
+    {
+        QList<Segment> lines(2);
+        lines[0].start = 10.0;
+        lines[0].end = 10.5;
+        lines[1].start = 10.0;
+        lines[1].end = 11.0;
+        fixTiming(&lines);
+        expectEq("overlap: second pushed after first", lines[1].start, 10.5);
+        expectEq("overlap: second keeps its end", lines[1].end, 11.0);
+        lines[0].end = 10.1; // 第一行很短
+        lines[1].start = 10.0;
+        lines[1].end = 10.2;
+        fixTiming(&lines);
+        expectEq("short first line extended", lines[0].end, 10.5);
+        expectEq("monotonic after fix", monotonic(lines), true);
+
+        // 增量断句：后一批的开头不早于前一批已经交出去的结尾
+        IncrementalSegmenter inc(o);
+        const auto first = inc.feed({rawSegment({QStringLiteral("すごい"), QStringLiteral("!")}, 20.0, 0.2)});
+        auto second = inc.feed({rawSegment({QStringLiteral("つんで"), QStringLiteral("!")}, 20.0, 0.4)});
+        second += inc.finish();
+        expectEq("incremental: first emitted", int(first.size()), 1);
+        expectEq("incremental: no overlap", !second.isEmpty() && second.first().start >= first.last().end, true);
+    }
+
     // 噪音过滤
     {
         auto line = [](const QStringList& words, const QList<double>& p, double confidence) {

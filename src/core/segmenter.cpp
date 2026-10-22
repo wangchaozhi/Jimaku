@@ -53,8 +53,8 @@ Script scriptOf(QChar c)
     return Script::Other;
 }
 
-// 长音符、小写假名不能放行首
-const QString kNoLineStart = QStringLiteral("ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ");
+// 长音符、小写假名、标点都不能放行首
+const QString kNoLineStart = QStringLiteral("ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ、。，．,.!?！？…」』）)");
 
 // 会不会把一个词从中间断开（whisper 的 token 不是词，常常把一个词拆成几段）。
 // 日语字幕可以换行的地方：助词或标点之后，或者下一段以汉字、片假名、英文开头（新词开始）
@@ -224,15 +224,7 @@ QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& o)
             s.start = s.end - o.maxDuration;
     }
 
-    // 时间轴单调、每行至少显示 0.5 秒（不压到下一行）
-    for (int i = 0; i < lines.size(); ++i) {
-        if (i > 0 && lines[i].start < lines[i - 1].end)
-            lines[i].start = lines[i - 1].end;
-        if (lines[i].end - lines[i].start < 0.5) {
-            const double limit = i + 1 < lines.size() ? lines[i + 1].start : lines[i].start + 0.5;
-            lines[i].end = qMax(lines[i].end, qMin(lines[i].start + 0.5, limit));
-        }
-    }
+    fixTiming(&lines);
     return lines;
 }
 
@@ -251,6 +243,12 @@ QList<Segment> IncrementalSegmenter::feed(const QList<Segment>& raw)
     // 最后一行以句末标点结尾时不会再和后面合并，可以直接定稿
     if (!lines.isEmpty() && !endsSentence(lines.last().ja))
         m_pending.append(lines.takeLast());
+    // 不早于已经交出去的行（新一批原始分段的开头可能和上一批的结尾重叠）
+    fixTiming(&lines, m_lastEnd);
+    if (!lines.isEmpty())
+        m_lastEnd = lines.last().end;
+    if (!m_pending.isEmpty())
+        m_pending.first().start = qMax(m_pending.first().start, m_lastEnd);
     return lines;
 }
 
@@ -258,5 +256,6 @@ QList<Segment> IncrementalSegmenter::finish()
 {
     QList<Segment> rest = m_pending;
     m_pending.clear();
+    fixTiming(&rest, m_lastEnd);
     return rest;
 }

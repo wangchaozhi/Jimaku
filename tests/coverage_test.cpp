@@ -63,6 +63,9 @@ int main()
     }
     expectEq("short word loop trimmed", int(dropRepeats(words).size()), 4);
     expectEq("moans kept", int(dropRepeats(moans).size()), 8);
+    expectEq("loop part recognized", repeatsLoop(QStringLiteral("お前何言って。いい子だよ。"), QStringLiteral("いい子だよ")), true);
+    expectEq("loop variant recognized", repeatsLoop(QStringLiteral("お前何言って。いい子だよ。"), QStringLiteral("お前言って。いい子だよ。")), true);
+    expectEq("other line kept", repeatsLoop(QStringLiteral("お前何言って。いい子だよ。"), QStringLiteral("すごい奥に")), false);
 
     // 读回进度：去掉重复行，没做完时去掉不在已识别区间里的行
     {

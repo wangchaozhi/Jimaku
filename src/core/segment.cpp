@@ -203,3 +203,31 @@ bool cleanNoise(Segment* s)
     s->end = qMax(s->start, qMin(s->end, kept.last().end));
     return hasScript(s->ja, Script::Japanese) || hasScript(s->ja, Script::Latin);
 }
+
+void fixTiming(QList<Segment>* lines, double after, double minDuration)
+{
+    double previousEnd = after;
+    for (int i = 0; i < lines->size(); ++i) {
+        Segment& s = (*lines)[i];
+        s.start = qMax(s.start, previousEnd);
+        if (s.end - s.start < minDuration) {
+            double limit = i + 1 < lines->size() ? (*lines)[i + 1].start : s.start + minDuration;
+            if (limit <= s.start) // 下一行和这一行同时开始：下一行会被往后挪
+                limit = s.start + minDuration;
+            s.end = qMax(s.end, qMin(s.start + minDuration, limit));
+        }
+        previousEnd = s.end;
+    }
+}
+
+bool repeatsLoop(const QString& loop, const QString& text)
+{
+    const QString a = letters(loop), b = letters(text);
+    return !b.isEmpty() && (a.contains(b) || b.contains(a) || similar(a, b));
+}
+
+bool onlyInterjection(const QString& text)
+{
+    const QString t = letters(text);
+    return !t.isEmpty() && isInterjection(t);
+}

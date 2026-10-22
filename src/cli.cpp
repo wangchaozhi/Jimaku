@@ -148,6 +148,8 @@ int runCli(int argc, char** argv)
             {QStringLiteral("output"), output},
             {QStringLiteral("media_seconds"), r.mediaDuration},
             {QStringLiteral("raw_segments"), r.rawSegments},
+            {QStringLiteral("loop_retries"), r.loopRetries},
+            {QStringLiteral("recovered_lines"), r.recoveredLines},
             {QStringLiteral("lines"), int(r.segments.size())},
             {QStringLiteral("longest_line_seconds"), longest},
             {QStringLiteral("first_line_seconds"), firstLine},
