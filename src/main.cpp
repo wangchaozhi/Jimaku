@@ -20,7 +20,8 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (event->type() == QEvent::Show) {
+        // Polish：在原生提示框（NSAlert）创建之前，图标会随选项一起传过去
+        if (event->type() == QEvent::Polish) {
             auto* box = qobject_cast<QMessageBox*>(watched);
             if (box && box->icon() != QMessageBox::NoIcon)
                 box->setIconPixmap(QApplication::windowIcon().pixmap(64, 64));

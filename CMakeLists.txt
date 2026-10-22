@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # 发布构建由 CI 根据 tag（v1.2.3）传入版本号
-set(JIMAKU_VERSION "0.1.2" CACHE STRING "Application version")
+set(JIMAKU_VERSION "0.1.3" CACHE STRING "Application version")
 if(NOT JIMAKU_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "JIMAKU_VERSION must look like 1.2.3, got '${JIMAKU_VERSION}'")
 endif()
