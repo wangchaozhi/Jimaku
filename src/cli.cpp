@@ -79,7 +79,6 @@ int runCli(int argc, char** argv)
     o.input = input;
     o.modelPath = modelFile.isEmpty() ? ModelManager::modelPath(modelId) : QFileInfo(modelFile).absoluteFilePath();
     o.translate = !p.isSet(QStringLiteral("no-translate"));
-    o.translator.glossary += Settings::parseGlossary(p.values(QStringLiteral("term")).join(QLatin1Char('\n')));
     const QString decode = p.value(QStringLiteral("decode"));
     if (decode == QLatin1String("nofallback"))
         o.decoding = Transcriber::Decoding::GreedyNoFallback;
@@ -102,6 +101,8 @@ int runCli(int argc, char** argv)
             return 1;
         }
     }
+    // 放在 translatorConfig() 之后，不然会被覆盖掉
+    o.translator.glossary += Settings::parseGlossary(p.values(QStringLiteral("term")).join(QLatin1Char('\n')));
 
     const auto format = p.value(QStringLiteral("format")) == QLatin1String("ass") ? SubtitleWriter::Format::Ass : SubtitleWriter::Format::Srt;
     const QString layoutArg = p.value(QStringLiteral("layout"));
