@@ -74,9 +74,10 @@ ctest --test-dir build
 - Windows 上用显卡加速：加 `-DJIMAKU_VULKAN=ON`（需要 [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)，发布包就是这样构建的），
   或者只给 NVIDIA 显卡用 `-DJIMAKU_CUDA=ON`（需要 CUDA Toolkit）。RTX 3060 笔记本上 3 分钟视频识别：
   CUDA 约 5 秒，Vulkan 约 5～8 秒（第一次要编译着色器），CPU 约 108 秒
-- macOS 本地构建每次都询问钥匙串：钥匙串里的"始终允许"绑定在签名上，默认的临时签名每次编译都会变。
-  在"登录"钥匙串里建一个名为 `Jimaku Dev` 的自签名代码签名证书（会自动使用），
-  或者用已有的证书：`-DJIMAKU_CODESIGN_IDENTITY="证书名"`，之后只需授权一次
+- macOS 本地构建每次都询问钥匙串：钥匙串条目只认带 Team ID 的签名，自签名证书没有 Team ID，
+  macOS 就按每次编译都会变的代码哈希区分程序。用免费 Apple ID 就能拿到的 Apple Development 证书
+  （Xcode > 设置 > 账户 > 管理证书 > + Apple Development）：CMake 会自动使用有效的 Apple Development 证书，
+  第一次点"始终允许"后不再询问。也可以用 `-DJIMAKU_CODESIGN_IDENTITY="证书名"` 指定
 
 ## 结构
 

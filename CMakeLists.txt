@@ -163,16 +163,27 @@ endif()
 # macOS：钥匙串的"始终允许"绑定在签名上。默认的临时签名每次编译都会变，于是每次都弹窗；
 # 用固定的证书签名（钥匙串里有名为 "Jimaku Dev" 的代码签名证书时自动使用）就只需授权一次
 # （也可以用 -DJIMAKU_CODESIGN_IDENTITY=... 指定别的证书）
+#
+# 但钥匙串条目还有一层"分区"检查：签名里没有 Team ID（自签名证书都没有）时，macOS 按每次编译都会变的
+# cdhash 区分程序，所以自签名的开发版每次编译后仍会弹窗。只有苹果签发的证书（免费 Apple ID 的
+# "Apple Development" 证书即可）带 Team ID，分区才固定 —— 有有效的 Apple Development 证书时优先用它
 if(APPLE)
     set(_identity "${JIMAKU_CODESIGN_IDENTITY}")
     if(NOT _identity)
+        execute_process(COMMAND security find-identity -v -p codesigning OUTPUT_VARIABLE _valid ERROR_QUIET)
         execute_process(COMMAND security find-identity -p codesigning OUTPUT_VARIABLE _identities ERROR_QUIET)
-        if(_identities MATCHES "\"Jimaku Dev\"")
+        if(_valid MATCHES "\"(Apple Development: [^\"]+)\"")
+            set(_identity "${CMAKE_MATCH_1}")
+        elseif(_identities MATCHES "\"Jimaku Dev\"")
             set(_identity "Jimaku Dev")
         endif()
     endif()
     if(_identity)
         message(STATUS "Jimaku: signing with \"${_identity}\"")
+        if(NOT _identity MATCHES "^(Apple Development|Developer ID Application)")
+            message(STATUS "Jimaku: \"${_identity}\" has no Team ID, so macOS will still ask for keychain access "
+                           "after each rebuild. Use an Apple Development certificate (Xcode > Settings > Accounts) to avoid it.")
+        endif()
         add_custom_command(TARGET Jimaku POST_BUILD
             COMMAND codesign --force --sign "${_identity}" "$<TARGET_BUNDLE_DIR:Jimaku>"
             VERBATIM)
