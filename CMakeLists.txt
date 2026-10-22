@@ -18,7 +18,8 @@ find_package(Qt6 6.7 REQUIRED COMPONENTS Widgets Network Multimedia MultimediaWi
 qt_standard_project_setup()
 
 if(MSVC)
-    add_compile_options(/utf-8)
+    # 只给 C/C++：开 JIMAKU_CUDA 时 nvcc 会把裸的 /utf-8 当成第二个输入文件
+    add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>")
 endif()
 
 # --- 第三方库：全部静态编进程序，发布时不用再带动态库 ----------------------
