@@ -35,15 +35,73 @@ int visibleLength(const QString& text)
     return n;
 }
 
+namespace {
+
+// 只留文字和数字：比较时忽略标点、空格、省略号
+QString letters(const QString& text)
+{
+    QString out;
+    for (QChar c : text) {
+        if (c.isLetterOrNumber())
+            out += c;
+    }
+    return out;
+}
+
+int editDistance(const QString& a, const QString& b)
+{
+    QList<int> row(b.size() + 1);
+    for (int j = 0; j <= b.size(); ++j)
+        row[j] = j;
+    for (int i = 1; i <= a.size(); ++i) {
+        int diag = row[0];
+        row[0] = i;
+        for (int j = 1; j <= b.size(); ++j) {
+            const int up = row[j];
+            row[j] = std::min({row[j] + 1, row[j - 1] + 1, diag + (a[i - 1] == b[j - 1] ? 0 : 1)});
+            diag = up;
+        }
+    }
+    return row[b.size()];
+}
+
+// 长句允许差一两个字（"お前何言って" / "お前言って"），短句要完全相同
+bool similar(const QString& a, const QString& b)
+{
+    if (a == b)
+        return true;
+    const int len = int(std::max(a.size(), b.size()));
+    return len >= 6 && editDistance(a, b) * 5 <= len;
+}
+
+// 语气词、喘息（あー、うーん、はぁ、んっ）：连着出现很多次是真的，不当成卡住
+bool isInterjection(const QString& text)
+{
+    static const QString chars = QStringLiteral("あいうえおぁぃぅぇぉんっゃゅょはひふへほアイウエオァィゥェォンッハヒフヘホー〜");
+    return std::all_of(text.cbegin(), text.cend(), [](QChar c) { return chars.contains(c); });
+}
+
+} // namespace
+
 QList<Segment> dropRepeats(const QList<Segment>& raw)
 {
     QList<Segment> out;
+    QString last;
     int run = 0;
     for (const Segment& s : raw) {
-        const bool same = !out.isEmpty() && out.last().ja == s.ja;
+        const QString text = letters(s.ja);
+        const bool same = !out.isEmpty() && !text.isEmpty() && similar(last, text);
         run = same ? run + 1 : 0;
-        if (same && run >= 2 && visibleLength(s.ja) >= 6)
-            continue;
+        if (same) {
+            if (text.size() >= 6 && run >= 2)
+                continue; // 长句：只留前 2 次
+            // 短句：连续 5 次以上才算卡住（ジャンク、あらめん），留前 4 次；语气词和英文口号（XG!）不管
+            const bool chant = std::none_of(text.cbegin(), text.cend(), [](QChar c) { return c.unicode() >= 0x3000; });
+            if (run >= 4 && !isInterjection(text) && !chant)
+                continue;
+        } else {
+            last = text;
+        }
         out.append(s);
     }
     return out;

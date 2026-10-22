@@ -45,6 +45,7 @@ QList<Segment> mergeRepeatedLines(const QList<Segment>& lines, double maxGap = 1
 // - 日文行里夹着的低置信度（< 0.5）英文词；整行英文时置信度 < 0.5 才丢（真的英文歌词、口号一般 > 0.5）
 bool cleanNoise(Segment* s);
 
-// 去掉识别"卡住"时反复输出的同一句话：连续 3 次以上、不少于 6 个字的相同文字只保留前 2 次
-// （"XG!" 这类短口号连喊是真的，不处理）
+// 去掉识别"卡住"时反复输出的同一句话（忽略标点比较）：
+// - 不少于 6 个字的句子连续出现 3 次以上只保留前 2 次，差一两个字也算同一句
+// - 短词连续 5 次以上只保留前 4 次；语气词（あー、うーん）和英文口号（"XG!"）连喊是真的，不处理
 QList<Segment> dropRepeats(const QList<Segment>& raw);

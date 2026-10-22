@@ -52,6 +52,17 @@ int main()
     const auto chants = dropRepeats({seg(QStringLiteral("XG!")), seg(QStringLiteral("XG!")), seg(QStringLiteral("XG!")),
                                      seg(QStringLiteral("XG!"))});
     expectEq("short chants kept", int(chants.size()), 4);
+    QList<Segment> variants;
+    for (int i = 0; i < 6; ++i)
+        variants.append(seg(i % 2 ? QStringLiteral("お前言って。いい子だよ。") : QStringLiteral("お前何言って。いい子だよ。")));
+    expectEq("near-identical loop trimmed", int(dropRepeats(variants).size()), 2);
+    QList<Segment> words, moans;
+    for (int i = 0; i < 8; ++i) {
+        words.append(seg(QStringLiteral("ジャンク")));
+        moans.append(seg(QStringLiteral("うーん…")));
+    }
+    expectEq("short word loop trimmed", int(dropRepeats(words).size()), 4);
+    expectEq("moans kept", int(dropRepeats(moans).size()), 8);
 
     // 读回进度：去掉重复行，没做完时去掉不在已识别区间里的行
     {

@@ -285,8 +285,9 @@ void Pipeline::runAll(const PipelineOptions& o)
                 &error,
                 [&](const QList<Segment>& fresh) {
                     // 去掉识别卡住时反复输出的同一句（和本区间之前的几段一起判断）
-                    const QList<Segment> kept = dropRepeats(recent + fresh).mid(recent.size());
-                    recent = (recent + fresh).mid(qMax(qsizetype(0), recent.size() + fresh.size() - 2));
+                    // 前面几段里本身也可能有被去掉的重复：按它们去重后的条数截取（去重只看前面，前缀结果不变）
+                    const QList<Segment> kept = dropRepeats(recent + fresh).mid(dropRepeats(recent).size());
+                    recent = (recent + fresh).mid(qMax(qsizetype(0), recent.size() + fresh.size() - 4));
                     add(seg.feed(kept));
                 },
                 start);
