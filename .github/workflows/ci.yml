@@ -14,7 +14,7 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Version from tag
         id: ver
@@ -81,7 +81,7 @@ jobs:
           codesign -d -r- build/Jimaku.app
           ditto -c -k --keepParent build/Jimaku.app "Jimaku-$v-macos-arm64.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: macos
@@ -93,7 +93,7 @@ jobs:
       # 识别用 Vulkan 加速（NVIDIA / AMD / Intel 显卡都行，找不到显卡时自动用 CPU）
       VULKAN_VERSION: '1.4.363.0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Version from tag
         id: ver
@@ -156,7 +156,7 @@ jobs:
           Copy-Item $loader.FullName $dir
           Compress-Archive -Path $dir -DestinationPath "Jimaku-$v-windows-x64.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: windows
@@ -167,10 +167,10 @@ jobs:
     needs: [macos, windows]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: Jimaku-*.zip
           generate_release_notes: true
