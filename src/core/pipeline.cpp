@@ -155,7 +155,7 @@ void Pipeline::runAll(const PipelineOptions& o)
     QList<int> pending; // 已定稿、还没提交翻译的行
     if (o.translate) {
         for (const Segment& s : all) {
-            if (s.zh.trimmed().isEmpty())
+            if (needsTranslation(s))
                 pending << s.id;
         }
     }
@@ -359,7 +359,7 @@ void Pipeline::runAll(const PipelineOptions& o)
         }
         result.usage = translator.usage();
         for (const Segment& s : lines)
-            result.untranslated += s.zh.trimmed().isEmpty() ? 1 : 0;
+            result.untranslated += needsTranslation(s) ? 1 : 0;
     } else {
         result.untranslated = int(lines.size());
     }

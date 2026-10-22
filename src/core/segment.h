@@ -30,6 +30,13 @@ QString joinWords(const QList<Word>& words);
 // 字幕"长度"：不计空白的字符数
 int visibleLength(const QString& text);
 
+// 需要翻译：没有译文，或者译文里还有假名（模型把日语语气词原样返回了，或只翻了一半）
+bool needsTranslation(const Segment& s);
+
+// 合并紧挨着的相同字幕（うん、あー 连说十几次会变成十几行闪烁）：间隔不超过 maxGap 秒、
+// 合并后不超过 maxDuration 秒的连续相同行并成一行
+QList<Segment> mergeRepeatedLines(const QList<Segment>& lines, double maxGap = 1.5, double maxDuration = 6.0);
+
 // 去掉识别"卡住"时反复输出的同一句话：连续 3 次以上、不少于 6 个字的相同文字只保留前 2 次
 // （"XG!" 这类短口号连喊是真的，不处理）
 QList<Segment> dropRepeats(const QList<Segment>& raw);

@@ -91,7 +91,7 @@ QList<Segment> sanitizeSegments(QList<Segment> segments, const QList<TimeRange>&
         if (!duplicate)
             out.append(s);
     }
-    return out;
+    return mergeRepeatedLines(out); // 旧版本处理的结果也一并整理
 }
 
 bool Project::save(QString* error) const

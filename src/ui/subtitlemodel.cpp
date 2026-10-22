@@ -160,7 +160,7 @@ int SubtitleModel::untranslatedCount() const
 {
     int n = 0;
     for (const Segment& s : m_segments)
-        n += s.zh.trimmed().isEmpty() ? 1 : 0;
+        n += needsTranslation(s) ? 1 : 0;
     return n;
 }
 
@@ -196,7 +196,7 @@ QVariant SubtitleModel::data(const QModelIndex& index, int role) const
         f.setBold(true);
         return f;
     }
-    if (role == Qt::BackgroundRole && index.column() == Chinese && s.zh.trimmed().isEmpty() && m_editable)
+    if (role == Qt::BackgroundRole && index.column() == Chinese && needsTranslation(s) && m_editable)
         return QColor(255, 196, 0, 70); // 没翻出来的行，深浅色主题下都看得见
     // 校对时改过的日文：浅蓝底，悬停显示语音识别的原文
     if (role == Qt::BackgroundRole && index.column() == Japanese && !s.jaOriginal.isEmpty())

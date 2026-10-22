@@ -179,8 +179,9 @@ Translator::ParsedReview Translator::parseReview(const QString& content, int fir
 QJsonArray Translator::buildMessages(const QStringList& lines, const QStringList& before, const QStringList& after) const
 {
     QString system = QString::fromUtf8(kTranslatePrompt);
-    system += m_config.translateLyrics ? QStringLiteral("5. 英文歌词、口号、喊声也翻译成中文。\n")
-                                       : QStringLiteral("5. 英文歌词、口号、喊声和拟声词保留原文，不翻译。\n");
+    system += m_config.translateLyrics ? QStringLiteral("5. 英文歌词、英文口号也翻译成中文。\n")
+                                       : QStringLiteral("5. 英文歌词、英文口号保留原文，不翻译。\n");
+    system += QStringLiteral("日语的语气词、感叹词、应答（うん、あー、いいね、はい 等）一定要译成对应的中文（嗯、啊、不错、是），不要原样返回日文。\n");
     if (m_config.subtitleStyle)
         system += QStringLiteral("6. 每段译文尽量简短，一般不超过 16 个汉字。\n");
     const QList<QPair<QString, QString>> glossary = this->glossary();
@@ -411,16 +412,18 @@ Translator::BatchOutcome Translator::translateLines(const QStringList& lines, co
     const QStringList all = before + lines + after;
     const int ctx = m_config.contextLines;
     for (int k = 0; k < lines.size() && r != Result::Fatal && r != Result::Canceled; ++k) {
-        if (!o.zh[k].isEmpty())
+        Segment probe;
+        probe.ja = lines[k];
+        probe.zh = o.zh[k];
+        if (!needsTranslation(probe))
             continue;
+        o.zh[k].clear(); // 模型原样返回了日文：当作没翻出来，下面单条重试
         const int i = int(before.size()) + k;
         const int from = qMax(0, i - ctx);
         QStringList one;
         r = translateBatch({lines[k]}, all.mid(from, i - from), all.mid(i + 1, ctx), &one, &err, cancel);
         if (r == Result::Ok && !finish(one.first()).isEmpty()) {
             o.zh[k] = finish(one.first());
-        } else if (r == Result::Ok && visibleLength(lines[k]) <= 4) {
-            o.zh[k] = lines[k]; // 很短的语气词、喊声：模型不给译文时保留原文，不算翻译失败
         } else {
             if (r == Result::Ok)
                 err = tr("模型对“%1”返回了空译文").arg(lines[k]);
@@ -517,7 +520,7 @@ TranslateOutcome Translator::translate(QList<Segment>* segments, const std::func
     TranslateOutcome outcome;
     QList<int> todo;
     for (int i = 0; i < segments->size(); ++i) {
-        if ((*segments)[i].zh.trimmed().isEmpty())
+        if (needsTranslation((*segments)[i]))
             todo << i;
     }
     if (todo.isEmpty()) {
@@ -576,7 +579,7 @@ TranslateOutcome Translator::translate(QList<Segment>* segments, const std::func
     }
 
     for (int i : todo) {
-        if ((*segments)[i].zh.trimmed().isEmpty())
+        if (needsTranslation((*segments)[i]))
             ++outcome.failed;
     }
     return outcome;

@@ -186,6 +186,9 @@ QList<Segment> resegment(const QList<Segment>& raw, const SegmenterOptions& o)
         ++i;
     }
 
+    // 紧挨着的相同字幕并成一行（连说的 うん、あー）
+    lines = mergeRepeatedLines(lines, o.pauseSplit * 3, o.maxDuration);
+
     // 没有任何文字的行（静音处 whisper 常常只输出一个"。"）不是字幕
     lines.erase(std::remove_if(lines.begin(), lines.end(),
                                [](const Segment& s) {

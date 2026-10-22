@@ -33,6 +33,41 @@ int main()
 {
     SegmenterOptions o;
 
+    // 连说的同一个词并成一行；间隔太大或合并后太长就不并
+    {
+        QList<Segment> in;
+        for (int i = 0; i < 5; ++i)
+            in.append(rawSegment({QStringLiteral("うん")}, i * 1.0));
+        in.append(rawSegment({QStringLiteral("うん")}, 10.0));
+        const auto merged = mergeRepeatedLines(in);
+        expectEq("repeats merged", int(merged.size()), 2);
+        expectEq("merged end", merged.first().end, in[4].end);
+        expectEq("merged words", int(merged.first().words.size()), 5);
+        QList<Segment> longRun;
+        for (int i = 0; i < 10; ++i)
+            longRun.append(rawSegment({QStringLiteral("あー")}, i * 1.0, 0.8));
+        for (const Segment& s : mergeRepeatedLines(longRun))
+            expectEq("merged line within max duration", s.end - s.start <= 6.0, true);
+    }
+
+    // 译文里还有假名就算没翻译
+    {
+        Segment s;
+        s.ja = QStringLiteral("いいね");
+        expectEq("empty needs translation", needsTranslation(s), true);
+        s.zh = QStringLiteral("いいね");
+        expectEq("kana copy needs translation", needsTranslation(s), true);
+        s.zh = QStringLiteral("クルーミス笑");
+        expectEq("half-translated needs translation", needsTranslation(s), true);
+        s.zh = QStringLiteral("不错");
+        expectEq("translated", !needsTranslation(s), true);
+        s.ja = QStringLiteral("High level");
+        s.zh = QStringLiteral("High level");
+        expectEq("english kept as is", !needsTranslation(s), true);
+        s.zh = QStringLiteral("好——");
+        expectEq("long dash is not kana", !needsTranslation(s), true);
+    }
+
     // 短句原样保留
     {
         const auto lines = resegment({rawSegment({QStringLiteral("こんにちは"), QStringLiteral("。")}, 1.0)}, o);
