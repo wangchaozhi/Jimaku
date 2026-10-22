@@ -50,6 +50,38 @@ int main()
             expectEq("merged line within max duration", s.end - s.start <= 6.0, true);
     }
 
+    // 噪音过滤
+    {
+        auto line = [](const QStringList& words, const QList<double>& p, double confidence) {
+            Segment s = rawSegment(words, 0.0);
+            for (int i = 0; i < p.size(); ++i)
+                s.words[i].p = p[i];
+            s.confidence = confidence;
+            return s;
+        };
+        Segment s = line({QStringLiteral("ぐぐぐ"), QStringLiteral("Lastly")}, {0.9, 0.1}, 0.43);
+        expectEq("embedded garbage kept line", cleanNoise(&s), true);
+        expectEq("embedded garbage removed", s.ja, QStringLiteral("ぐぐぐ"));
+        s = line({QStringLiteral("にゅー"), QStringLiteral("じХUm")}, {0.9, 0.9}, 0.6);
+        expectEq("cyrillic kept line", cleanNoise(&s), true);
+        expectEq("cyrillic removed", s.ja, QStringLiteral("にゅー"));
+        s = line({QStringLiteral("XG"), QStringLiteral("の"), QStringLiteral("リーダー")}, {0.95, 0.9, 0.9}, 0.92);
+        expectEq("confident latin kept line", cleanNoise(&s), true);
+        expectEq("confident latin in japanese kept", s.ja, QStringLiteral("XGのリーダー"));
+        s = line({QStringLiteral("X"), QStringLiteral("G"), QStringLiteral("の")}, {0.3, 0.99, 0.9}, 0.78);
+        expectEq("split latin token judged together", cleanNoise(&s) ? s.ja : QString(), QStringLiteral("XGの"));
+        s = line({QStringLiteral("I"), QStringLiteral("just"), QStringLiteral("learned")}, {0.8, 0.8, 0.8}, 0.8);
+        expectEq("english lyrics kept", cleanNoise(&s), true);
+        s = line({QStringLiteral("High"), QStringLiteral("level")}, {0.3, 0.3}, 0.3);
+        expectEq("unsure english dropped", cleanNoise(&s), false);
+        s = line({QStringLiteral("えー"), QStringLiteral("後計")}, {0.01, 0.01}, 0.01);
+        expectEq("very unsure dropped", cleanNoise(&s), false);
+        s = line({QStringLiteral("ご視聴ありがとうございました。")}, {0.9}, 0.9);
+        expectEq("known hallucination dropped", cleanNoise(&s), false);
+        s = line({QStringLiteral("звCold")}, {0.9}, 0.9);
+        expectEq("only foreign dropped", cleanNoise(&s), false);
+    }
+
     // 译文里还有假名就算没翻译
     {
         Segment s;

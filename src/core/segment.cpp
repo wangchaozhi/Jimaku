@@ -76,3 +76,72 @@ QList<Segment> mergeRepeatedLines(const QList<Segment>& lines, double maxGap, do
     }
     return out;
 }
+
+namespace {
+
+enum class Script { Japanese, Latin, Foreign, Neutral };
+
+Script scriptOf(QChar c)
+{
+    const ushort u = c.unicode();
+    if ((u >= 0x3041 && u <= 0x30FF) || (u >= 0x3400 && u <= 0x9FFF) || u == 0x3005 || (u >= 0xFF66 && u <= 0xFF9F)) // 含长音符 ー
+        return Script::Japanese;
+    if (!c.isLetter())
+        return Script::Neutral;
+    return u < 0x0250 || (u >= 0xFF21 && u <= 0xFF5A) ? Script::Latin : Script::Foreign;
+}
+
+bool hasScript(const QString& text, Script script)
+{
+    return std::any_of(text.cbegin(), text.cend(), [script](QChar c) { return scriptOf(c) == script; });
+}
+
+} // namespace
+
+bool cleanNoise(Segment* s)
+{
+    static const QStringList hallucinations{
+        QStringLiteral("ご視聴ありがとうございました"), QStringLiteral("ご覧いただきありがとうございます"),
+        QStringLiteral("チャンネル登録"), QStringLiteral("最後までご視聴")};
+    for (const QString& h : hallucinations) {
+        if (s->ja.contains(h))
+            return false;
+    }
+    if (s->confidence < 0.15)
+        return false;
+    const bool japanese = hasScript(s->ja, Script::Japanese);
+    if (!japanese && s->confidence < 0.5)
+        return false;
+
+    // 连续的英文词按一整段判断（"XG" 会拆成 "X" "G" 两个 token，单看一个可能置信度很低）
+    QList<Word> kept;
+    for (int i = 0; i < s->words.size();) {
+        const Word& w = s->words[i];
+        if (hasScript(w.text, Script::Foreign)) {
+            ++i;
+            continue;
+        }
+        if (!japanese || !hasScript(w.text, Script::Latin)) {
+            kept.append(w);
+            ++i;
+            continue;
+        }
+        int j = i;
+        double sum = 0;
+        while (j < s->words.size() && hasScript(s->words[j].text, Script::Latin)
+               && !hasScript(s->words[j].text, Script::Foreign))
+            sum += s->words[j++].p;
+        if (sum / (j - i) >= 0.5)
+            kept.append(s->words.mid(i, j - i));
+        i = j;
+    }
+    if (kept.size() == s->words.size())
+        return true;
+    if (kept.isEmpty())
+        return false;
+    s->words = kept;
+    s->ja = joinWords(kept);
+    s->start = qMax(s->start, kept.first().start);
+    s->end = qMax(s->start, qMin(s->end, kept.last().end));
+    return hasScript(s->ja, Script::Japanese) || hasScript(s->ja, Script::Latin);
+}

@@ -22,7 +22,7 @@ struct Callbacks {
     double offset;
 };
 
-// 第 s 段 → Segment：把字节级 token 攒成完整 UTF-8 再作为一个词，时间取首尾 token。没有文字时返回 false
+// 第 s 段 → Segment：把字节级 token 攒成完整 UTF-8 再作为一个词，时间取首尾 token。没有文字或是噪音时返回 false
 bool extractSegment(whisper_context* ctx, int s, double offset, Segment* seg)
 {
     const whisper_token eot = whisper_token_eot(ctx);
@@ -30,6 +30,8 @@ bool extractSegment(whisper_context* ctx, int s, double offset, Segment* seg)
     seg->end = whisper_full_get_segment_t1(ctx, s) / 100.0 + offset;
     QByteArray pending;
     double pendingStart = -1;
+    double pendingP = 0, totalP = 0;
+    int pendingTokens = 0, totalTokens = 0;
     const int nTok = whisper_full_n_tokens(ctx, s);
     for (int t = 0; t < nTok; ++t) {
         if (whisper_full_get_token_id(ctx, s, t) >= eot) // [_BEG_]、时间戳等特殊 token
@@ -39,12 +41,19 @@ bool extractSegment(whisper_context* ctx, int s, double offset, Segment* seg)
         if (pending.isEmpty())
             pendingStart = t0;
         pending += whisper_full_get_token_text(ctx, s, t);
+        const float p = whisper_full_get_token_p(ctx, s, t);
+        pendingP += p;
+        ++pendingTokens;
+        totalP += p;
+        ++totalTokens;
         const int ok = completeUtf8Length(pending);
         if (ok == 0)
             continue;
-        Word w{pendingStart, qMax(t1, pendingStart), QString::fromUtf8(pending.left(ok))};
+        Word w{pendingStart, qMax(t1, pendingStart), QString::fromUtf8(pending.left(ok)), pendingP / pendingTokens};
         pending = pending.mid(ok);
         pendingStart = t1;
+        pendingP = 0;
+        pendingTokens = 0;
         if (!w.text.trimmed().isEmpty())
             seg->words.append(w);
     }
@@ -54,7 +63,10 @@ bool extractSegment(whisper_context* ctx, int s, double offset, Segment* seg)
     // 词级时间比整段时间更贴近实际发声
     seg->start = qMax(seg->start, seg->words.first().start);
     seg->end = qMax(seg->start, qMin(seg->end, seg->words.last().end));
-    return true;
+    seg->confidence = totalP / totalTokens;
+    if (qEnvironmentVariableIsSet("JIMAKU_DEBUG_SEGMENTS"))
+        fprintf(stderr, "SEG\t%.1f\t%.3f\t%s\n", seg->start, seg->confidence, seg->ja.toUtf8().constData());
+    return cleanNoise(seg); // 呻吟、喘息被识别成的乱码
 }
 
 } // namespace
