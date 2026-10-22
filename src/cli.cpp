@@ -8,6 +8,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <cstdio>
@@ -140,6 +141,9 @@ int runCli(int argc, char** argv)
         double longest = 0;
         for (const Segment& s : r.segments)
             longest = qMax(longest, s.duration());
+        QJsonArray asrJson;
+        for (const auto& [wrong, right] : r.review.asr)
+            asrJson.append(QStringLiteral("%1 → %2").arg(wrong, right));
         const QJsonObject stats{
             {QStringLiteral("output"), output},
             {QStringLiteral("media_seconds"), r.mediaDuration},
@@ -152,6 +156,7 @@ int runCli(int argc, char** argv)
             {QStringLiteral("translate_error"), r.translateError.isError() ? r.translateError.message : r.lastTranslateError},
             {QStringLiteral("review"), QJsonObject{{QStringLiteral("summary"), r.review.summary},
                                                     {QStringLiteral("terms"), int(r.review.terms.size())},
+                                                    {QStringLiteral("asr"), asrJson},
                                                     {QStringLiteral("ja_fixed"), r.review.jaFixed},
                                                     {QStringLiteral("zh_fixed"), r.review.zhFixed},
                                                     {QStringLiteral("error"), r.review.error}}},

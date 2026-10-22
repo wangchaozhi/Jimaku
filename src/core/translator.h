@@ -38,6 +38,7 @@ struct TranslateOutcome {
 struct ReviewOutcome {
     QString summary;                          // 一句话概括视频内容
     QList<QPair<QString, QString>> terms;     // 识别出的专有名词：日文 → 中文
+    QList<QPair<QString, QString>> asr;       // 全片统一改正的识别错误：错误写法 → 正确写法
     int jaFixed = 0;                          // 纠正了识别错误的行数
     int zhFixed = 0;                          // 改了译文的行数
     QString error;                            // 校对失败时的原因（不影响已有译文）
@@ -77,8 +78,9 @@ public:
 
     // 从字幕里提取人名、团体名等专有名词并给出统一译法（zh 可为空：只有日文时）。
     // 长视频识别到一半就先提取一次，之后的翻译都带上这份术语表
+    // asr 非空时同时收集反复出现的专有名词识别错误（错误写法 → 正确写法）
     QList<QPair<QString, QString>> extractTerms(const QList<Segment>& lines, const std::atomic_bool* cancel,
-                                                QString* error = nullptr);
+                                                QString* error = nullptr, QList<QPair<QString, QString>>* asr = nullptr);
     // 追加到术语表（线程安全），之后的翻译请求都会带上
     void addTerms(const QList<QPair<QString, QString>>& terms);
     QList<QPair<QString, QString>> terms() const;
@@ -106,10 +108,16 @@ public:
         bool ok = false;
         QString summary;
         QList<QPair<QString, QString>> terms;
+        QList<QPair<QString, QString>> asr; // 识别错误：错误写法 → 正确写法
         QList<ReviewFix> fixes;
     };
     // 解析校对回复；越界或空的修改被丢弃
     static ParsedReview parseReview(const QString& content, int firstIndex, int lineCount);
+
+    // 把识别错误在所有日文里统一替换（改过的行在 jaOriginal 里留原文），返回改过的行号。
+    // 宁可漏改：少于 3 个字、全是平假名、只出现在一行的错误写法不替换；
+    // 是更长的词的一部分时（スタ 在 スタンリー 里）那一处也不替换
+    static QList<int> applyAsrFixes(QList<Segment>* segments, const QList<QPair<QString, QString>>& fixes);
 
     // 一批翻译请求的 messages（单独暴露出来便于测试提示词）
     QJsonArray buildMessages(const QStringList& lines, const QStringList& before, const QStringList& after) const;

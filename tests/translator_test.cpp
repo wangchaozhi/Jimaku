@@ -66,6 +66,33 @@ int main()
     expectEq("review fix ja", review.fixes.value(0).ja, QStringLiteral("VOGUE"));
     check("review garbage", !Translator::parseReview(QStringLiteral("无法校对"), 0, 5).ok);
 
+    // 识别错误整片统一替换；太短、全是平假名的不换（多半是普通词）
+    const auto terms = Translator::parseReview(QStringLiteral(
+        "{\"terms\":[],\"asr\":[{\"wrong\":\"dna\",\"right\":\"DeNA\"},{\"wrong\":\"から\",\"right\":\"空\"},"
+        "{\"wrong\":\"x\",\"right\":\"X\"},{\"wrong\":\"同じ\",\"right\":\"同じ\"}]}"), 0, 0);
+    expectEq("asr parsed", int(terms.asr.size()), 3);
+    QList<Segment> segs(3);
+    segs[0].ja = QStringLiteral("阪神対dna");
+    segs[1].ja = QStringLiteral("dnaが勝ったから");
+    segs[2].ja = QStringLiteral("x軸");
+    const QList<int> changed = Translator::applyAsrFixes(&segs, terms.asr);
+    expectEq("asr changed lines", int(changed.size()), 2);
+    expectEq("asr replaced", segs[1].ja, QStringLiteral("DeNAが勝ったから"));
+    expectEq("asr keeps original", segs[0].jaOriginal, QStringLiteral("阪神対dna"));
+    expectEq("asr skips short", segs[2].ja, QStringLiteral("x軸"));
+
+    // 只出现在一行的不换；是更长的词的一部分时那一处不换
+    QList<Segment> more(4);
+    more[0].ja = QStringLiteral("ベースが打った");
+    more[1].ja = QStringLiteral("ベースは3位");
+    more[2].ja = QStringLiteral("ベースボールの話");
+    more[3].ja = QStringLiteral("ライチャンと言うかな");
+    Translator::applyAsrFixes(&more, {{QStringLiteral("ベース"), QStringLiteral("ベイスターズ")},
+                                      {QStringLiteral("ライチャン"), QStringLiteral("広島")}});
+    expectEq("asr whole word", more[1].ja, QStringLiteral("ベイスターズは3位"));
+    expectEq("asr not inside longer word", more[2].ja, QStringLiteral("ベースボールの話"));
+    expectEq("asr skips one-off", more[3].ja, QStringLiteral("ライチャンと言うかな"));
+
     std::printf("%d failure(s)\n", g_failures);
     return g_failures;
 }

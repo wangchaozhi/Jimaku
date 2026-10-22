@@ -12,6 +12,7 @@
 #include <QObject>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QSet>
 #include <QThread>
 #include <QThreadPool>
 #include <QTimer>
@@ -53,7 +54,12 @@ const char* kTermsPrompt =
     "从下面的日语视频字幕里找出人名、团体名、作品名、地名、品牌等专有名词，给出统一的中文译法。"
     "每条字幕是 \"日文 ｜ 现有中文译文\"（还没翻译时只有日文）。"
     "现有译文里已经有的译法优先沿用其中最常见的一种；不认识的人名照原文保留，不要编造；拿不准的不要列出。"
-    "glossary 里已经确定的不用重复。只输出 JSON：{\"terms\": [{\"ja\": \"日文\", \"zh\": \"中文\"}]}";
+    "glossary 里已经确定的不用重复。\n"
+    "另外列出在好几行里反复出现、被语音识别写错的专有名词（人名、队名、团体名、作品名；同音错字、外来语听错、大小写错，"
+    "例如队名 DeNA 被写成 dna 或 DNA）：wrong 必须是字幕日文里原样出现的字符串，right 是正确写法。"
+    "同一个名字在日文里出现了几种写法时，每种错误写法各列一条（大小写不同也算不同写法）。"
+    "这些会在全片统一替换，所以只列有把握的专有名词；普通词、术语、只出现一次的错误都不要列（逐行校对会处理）。\n"
+    "只输出 JSON：{\"terms\": [{\"ja\": \"日文\", \"zh\": \"中文\"}], \"asr\": [{\"wrong\": \"错误写法\", \"right\": \"正确写法\"}]}";
 
 constexpr int kReviewChunk = 150; // 校对时每次交给模型的行数
 constexpr int kTermsChunk = 600;  // 提取术语时每次交给模型的行数
@@ -162,6 +168,12 @@ Translator::ParsedReview Translator::parseReview(const QString& content, int fir
         const QString zh = v.toObject().value(QStringLiteral("zh")).toString().trimmed();
         if (!ja.isEmpty() && !zh.isEmpty())
             r.terms.append({ja, zh});
+    }
+    for (const QJsonValue& v : obj.value(QStringLiteral("asr")).toArray()) {
+        const QString wrong = v.toObject().value(QStringLiteral("wrong")).toString().trimmed();
+        const QString right = v.toObject().value(QStringLiteral("right")).toString().trimmed();
+        if (!wrong.isEmpty() && !right.isEmpty() && wrong != right)
+            r.asr.append({wrong, right});
     }
     for (const QJsonValue& v : obj.value(QStringLiteral("fixes")).toArray()) {
         const QJsonObject f = v.toObject();
@@ -332,8 +344,60 @@ QString Translator::complete(const QJsonArray& messages, double temperature, QSt
     return r == Result::Ok ? content : QString();
 }
 
+QList<int> Translator::applyAsrFixes(QList<Segment>* segments, const QList<QPair<QString, QString>>& fixes)
+{
+    // 片假名、拉丁字母各算一类：匹配处前后紧挨着同一类的字，说明它只是更长的词的一部分（スタ 在 スタンリー 里）
+    const auto script = [](QChar c) {
+        if (c.unicode() >= 0x30A0 && c.unicode() <= 0x30FF)
+            return 1;
+        if (c.isLetter() && c.unicode() < 0x250)
+            return 2;
+        return 0;
+    };
+    const auto wholeMatches = [&](const QString& text, const QString& wrong) {
+        QList<int> at;
+        for (int i = text.indexOf(wrong); i >= 0; i = text.indexOf(wrong, i + wrong.size())) {
+            const int end = i + int(wrong.size());
+            const bool joinedBefore = i > 0 && script(text[i - 1]) != 0 && script(text[i - 1]) == script(wrong.front());
+            const bool joinedAfter = end < text.size() && script(text[end]) != 0 && script(text[end]) == script(wrong.back());
+            if (!joinedBefore && !joinedAfter)
+                at.append(i);
+        }
+        return at;
+    };
+
+    QList<int> changed;
+    for (const auto& [wrong, right] : fixes) {
+        const bool allHiragana = std::all_of(wrong.cbegin(), wrong.cend(),
+                                             [](QChar c) { return c.unicode() >= 0x3040 && c.unicode() <= 0x309F; });
+        if (wrong.size() < 3 || allHiragana || wrong == right)
+            continue;
+        // 只统一改反复出现的错误；只出现在一行的交给逐行校对，整片替换容易误伤
+        QList<QList<int>> hits(segments->size());
+        int lines = 0;
+        for (int i = 0; i < segments->size(); ++i) {
+            hits[i] = wholeMatches((*segments)[i].ja, wrong);
+            lines += hits[i].isEmpty() ? 0 : 1;
+        }
+        if (lines < 2)
+            continue;
+        for (int i = 0; i < segments->size(); ++i) {
+            if (hits[i].isEmpty())
+                continue;
+            Segment& s = (*segments)[i];
+            if (s.jaOriginal.isEmpty())
+                s.jaOriginal = s.ja;
+            for (auto it = hits[i].crbegin(); it != hits[i].crend(); ++it)
+                s.ja.replace(*it, wrong.size(), right);
+            if (!changed.contains(i))
+                changed.append(i);
+        }
+    }
+    return changed;
+}
+
 QList<QPair<QString, QString>> Translator::extractTerms(const QList<Segment>& lines, const std::atomic_bool* cancel,
-                                                        QString* error)
+                                                        QString* error, QList<QPair<QString, QString>>* asr)
 {
     QList<QPair<QString, QString>> found;
     for (int first = 0; first < lines.size(); first += kTermsChunk) {
@@ -364,6 +428,8 @@ QList<QPair<QString, QString>> Translator::extractTerms(const QList<Segment>& li
         const ParsedReview parsed = parseReview(content, 0, 0); // 同样的 {"terms": [...]} 结构
         addTerms(parsed.terms);
         found += parsed.terms;
+        if (asr)
+            *asr += parsed.asr;
     }
     return found;
 }
@@ -442,13 +508,17 @@ ReviewOutcome Translator::review(QList<Segment>* segments, const std::atomic_boo
     ReviewOutcome out;
     // 第一步：整片统一专有名词（长视频分几次，前面定下的带到后面），之后各段校对都用这份术语表
     const QList<QPair<QString, QString>> before = terms();
-    extractTerms(*segments, cancel, &out.error);
+    extractTerms(*segments, cancel, &out.error, &out.asr);
     for (const auto& t : terms()) {
         if (!before.contains(t))
             out.terms.append(t);
     }
     if (cancel && cancel->load())
         return out;
+    // 同一个识别错误整片统一改掉（逐行校对只会改它发现的那几行），改完再逐行校对
+    QSet<int> jaChanged;
+    for (int i : applyAsrFixes(segments, out.asr))
+        jaChanged.insert(i);
 
     // 第二步：各段并行校对，结果全部回来后再写回（工作期间 segments 只读）
     QJsonArray glossaryJson;
@@ -500,7 +570,7 @@ ReviewOutcome Translator::review(QList<Segment>* segments, const std::atomic_boo
                 if (s.jaOriginal.isEmpty())
                     s.jaOriginal = s.ja;
                 s.ja = f.ja;
-                ++out.jaFixed;
+                jaChanged.insert(f.index);
             }
             const QString zh = finish(f.zh);
             if (!zh.isEmpty() && zh != s.zh) {
@@ -511,6 +581,7 @@ ReviewOutcome Translator::review(QList<Segment>* segments, const std::atomic_boo
             }
         }
     }
+    out.jaFixed = int(jaChanged.size());
     return out;
 }
 
