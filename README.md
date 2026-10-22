@@ -28,7 +28,8 @@
 
 从 [Releases](https://github.com/wangchaozhi/Jimaku/releases) 下载：
 
-- **Windows**：`Jimaku-x.y.z-windows-x64.zip`，解压后运行 `Jimaku.exe`（已附带 ffmpeg）
+- **Windows**：`Jimaku-x.y.z-windows-x64.zip`，解压后运行 `Jimaku.exe`（已附带 ffmpeg）。
+  识别用 Vulkan 走显卡加速（NVIDIA / AMD / Intel 都行，不用装 CUDA），没有可用的显卡时自动用 CPU
 - **macOS 14+（Apple 芯片）**：`Jimaku-x.y.z-macos-arm64.zip`，解压后把 `Jimaku.app` 拖到“应用程序”；需要先安装 ffmpeg：`brew install ffmpeg`。
   安装包没有苹果开发者签名，第一次打开需要在“系统设置 > 隐私与安全性”里允许
 
@@ -70,7 +71,9 @@ ctest --test-dir build
 ```
 
 - macOS（Homebrew 的 Qt）：加 `-DCMAKE_PREFIX_PATH=$(brew --prefix qt)`
-- Windows 上用 NVIDIA 显卡加速：加 `-DJIMAKU_CUDA=ON`（需要 CUDA Toolkit）
+- Windows 上用显卡加速：加 `-DJIMAKU_VULKAN=ON`（需要 [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)，发布包就是这样构建的），
+  或者只给 NVIDIA 显卡用 `-DJIMAKU_CUDA=ON`（需要 CUDA Toolkit）。RTX 3060 笔记本上 3 分钟视频识别：
+  CUDA 约 5 秒，Vulkan 约 5～8 秒（第一次要编译着色器），CPU 约 108 秒
 - macOS 本地构建每次都询问钥匙串：钥匙串里的"始终允许"绑定在签名上，默认的临时签名每次编译都会变。
   在"登录"钥匙串里建一个名为 `Jimaku Dev` 的自签名代码签名证书（会自动使用），
   或者用已有的证书：`-DJIMAKU_CODESIGN_IDENTITY="证书名"`，之后只需授权一次
@@ -88,4 +91,5 @@ tests/        断句、字幕格式、翻译回复解析、错误分类、UTF-8 
 
 MIT。识别使用 whisper.cpp（MIT）和 OpenAI Whisper 模型（MIT）；钥匙串使用 qtkeychain（BSD）；界面使用 Qt（LGPLv3）；
 振假名使用 MeCab（BSD）和 IPADIC 字典（随字典下载附带 COPYING 许可）。
-Windows 安装包附带的 ffmpeg 为 LGPL 版本，来自 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)。
+Windows 安装包附带的 ffmpeg 为 LGPL 版本，来自 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)；
+附带的 Vulkan loader（vulkan-1.dll）来自 LunarG Vulkan Runtime（Apache-2.0）。

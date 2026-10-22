@@ -26,12 +26,15 @@ endif()
 include(FetchContent)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# whisper.cpp：macOS 默认走 Metal（着色器编进库里），Windows 默认 CPU，可选 CUDA
+# whisper.cpp：macOS 默认走 Metal（着色器编进库里），Windows 默认 CPU，可选 CUDA 或 Vulkan
 option(JIMAKU_CUDA "Build whisper.cpp with CUDA (Windows/Linux, needs CUDA toolkit)" OFF)
+# Vulkan：NVIDIA / AMD / Intel 显卡都能用，用户不用装 CUDA，也不用带几百 MB 的 cuBLAS（构建时需要 Vulkan SDK）
+option(JIMAKU_VULKAN "Build whisper.cpp with Vulkan (Windows/Linux, needs Vulkan SDK to build)" OFF)
 set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA ${JIMAKU_CUDA} CACHE BOOL "" FORCE)
+set(GGML_VULKAN ${JIMAKU_VULKAN} CACHE BOOL "" FORCE)
 # 没指定显卡架构时 ggml 会为好几代显卡各编一遍，又慢又容易把内存耗光；本机构建只编本机显卡。
 # 要给别的显卡用就自己指定，例如 -DCMAKE_CUDA_ARCHITECTURES="75;86;89"
 if(JIMAKU_CUDA AND NOT DEFINED CMAKE_CUDA_ARCHITECTURES AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)

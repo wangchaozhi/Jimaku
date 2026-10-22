@@ -89,6 +89,9 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    env:
+      # 识别用 Vulkan 加速（NVIDIA / AMD / Intel 显卡都行，找不到显卡时自动用 CPU）
+      VULKAN_VERSION: '1.4.363.0'
     steps:
       - uses: actions/checkout@v4
 
@@ -109,9 +112,19 @@ jobs:
           modules: qtmultimedia
           cache: true
 
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          $ver = $env:VULKAN_VERSION
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$ver/windows/vulkansdk-windows-X64-$ver.exe" -OutFile vulkansdk.exe
+          $p = Start-Process ./vulkansdk.exe -ArgumentList '--root', "C:\VulkanSDK\$ver", '--accept-licenses', '--default-answer', '--confirm-command', 'install' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Vulkan SDK install failed: $($p.ExitCode)" }
+          "VULKAN_SDK=C:\VulkanSDK\$ver" >> $env:GITHUB_ENV
+          "C:\VulkanSDK\$ver\Bin" >> $env:GITHUB_PATH
+
       - name: Configure
         # 加引号：pwsh 会把未加引号的 -DX=0.1.0 在点号处拆开
-        run: cmake -S . -B build -A x64 "-DJIMAKU_VERSION=${{ steps.ver.outputs.version }}"
+        run: cmake -S . -B build -A x64 -DJIMAKU_VULKAN=ON "-DJIMAKU_VERSION=${{ steps.ver.outputs.version }}"
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -135,6 +148,12 @@ jobs:
           Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
           Get-ChildItem ffmpeg -Recurse -Include ffmpeg.exe, ffprobe.exe | Copy-Item -Destination $dir
+          # 附带 Vulkan loader（vulkan-1.dll，Apache-2.0）：没装 Vulkan 运行库的电脑也能启动（这时用 CPU 识别）
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/VulkanRT-X64-$env:VULKAN_VERSION-Components.zip" -OutFile vulkanrt.zip
+          Expand-Archive vulkanrt.zip -DestinationPath vulkanrt
+          $loader = Get-ChildItem vulkanrt -Recurse -Filter vulkan-1.dll | Sort-Object { $_.FullName -notmatch 'x64' } | Select-Object -First 1
+          if (-not $loader) { throw 'vulkan-1.dll not found in Vulkan runtime components' }
+          Copy-Item $loader.FullName $dir
           Compress-Archive -Path $dir -DestinationPath "Jimaku-$v-windows-x64.zip"
 
       - uses: actions/upload-artifact@v4
