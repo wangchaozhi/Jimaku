@@ -2,10 +2,13 @@
 
 #include "modelmanager.h"
 
+#include <QCoreApplication>
 #include <QEventLoop>
 #include <QObject>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTimer>
+#include <cstdio>
 #include <qtkeychain/keychain.h>
 
 namespace Settings {
@@ -203,8 +206,30 @@ QString apiKey(const QString& providerId)
     job.setKey(providerId);
     QEventLoop loop;
     QObject::connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    // 命令行模式下钥匙串可能在等授权弹窗（看不到的话就一直卡着）：先提示，等太久就放弃
+    QTimer hint, giveUp;
+    bool timedOut = false;
+    if (QCoreApplication::instance() && !QCoreApplication::instance()->inherits("QGuiApplication")) {
+        hint.setSingleShot(true);
+        QObject::connect(&hint, &QTimer::timeout, [] {
+            std::fputs(qPrintable(QCoreApplication::translate("Settings", "正在等待系统钥匙串授权：如果弹出了对话框请点“允许”，"
+                                                                          "也可以用环境变量 JIMAKU_API_KEY 传入 key\n")),
+                       stderr);
+        });
+        hint.start(3000);
+        giveUp.setSingleShot(true);
+        QObject::connect(&giveUp, &QTimer::timeout, &loop, [&] {
+            timedOut = true;
+            loop.quit();
+        });
+        giveUp.start(120000);
+    }
     job.start();
     loop.exec();
+    if (timedOut) {
+        std::fputs(qPrintable(QCoreApplication::translate("Settings", "等待钥匙串授权超时（2 分钟），没有读到 API key\n")), stderr);
+        return {};
+    }
     return job.error() == QKeychain::NoError ? job.textData() : QString();
 }
 
